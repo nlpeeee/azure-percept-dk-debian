@@ -1,0 +1,18 @@
+# Source firmware — Microsoft proprietary, not redistributable
+sources/Azure-Percept-DK.raw
+sources/fast-hab-fw.raw
+sources/vmlinuz-mariner
+sources/ms-modules.tar.gz
+sources/88x2ce.ko
+sources/rtl8822cu_fw
+sources/rtl8822cu_config
+sources/debian-rootfs.tar.zst
+
+# Build output
+output/
+
+# OS junk
+Thumbs.db
+.DS_Store
+*.swp
+*~

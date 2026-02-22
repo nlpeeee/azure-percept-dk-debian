@@ -1,0 +1,44 @@
+uuu_version 1.2.39
+
+# ============================================================================
+# Azure Percept DK — Flash Debian Image
+#
+# Flashes the patched MS image (with Debian rootfs) onto eMMC.
+#
+# Prerequisites:
+#   1. Run 01_build_image.sh first to produce output/debian-percept-dk.raw
+#   2. Device in USB recovery mode (hold recovery button, power on)
+#
+# Usage (from Windows):
+#   uuu.exe flash.uuu
+#
+# Usage (from WSL):
+#   uuu flash.uuu
+# ============================================================================
+
+# Boot into fastboot via SDP using the HAB-signed bootloader
+SDP: boot -f sources/fast-hab-fw.raw
+
+SDPV: delay 1000
+SDPV: write -f sources/fast-hab-fw.raw -skipspl
+SDPV: jump
+
+# Disable Cyres watchdog if present (Percept DK specific)
+FB: ucmd if env exists usb_flash_mode; then cyres_wdog unblock_wdog; else echo Skipping Cyres WDOG; fi
+
+# Select eMMC as target
+FB: ucmd setenv fastboot_dev mmc
+FB: ucmd setenv mmcdev ${emmc_dev}
+FB: ucmd mmc dev ${emmc_dev}
+
+# Flash bootloader to eMMC boot partition
+FB: flash bootloader sources/fast-hab-fw.raw
+
+# Flash full eMMC image (auto-sparse for large images)
+FB: flash -raw2sparse all output/debian-percept-dk.raw
+
+# Configure eMMC to boot from boot1 partition
+FB: ucmd if env exists emmc_ack; then ; else setenv emmc_ack 0; fi;
+FB: ucmd mmc partconf ${emmc_dev} ${emmc_ack} 1 1
+
+FB: done

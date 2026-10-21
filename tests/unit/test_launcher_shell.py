@@ -54,7 +54,7 @@ class LauncherShell(unittest.TestCase):
         cases = {
             "valid_path": [("/vmlinuz", 0), ("/boot/vmlinuz-6.12+deb13", 0), ("vmlinuz", 1), ("/a/../b", 1), ("/a b", 1), ("//x", 1)],
             "valid_ipv4": [("10.0.0.1", 0), ("255.255.255.255", 0), ("256.1.1.1", 1), ("1.2.3", 1), ("1..2.3", 1), ("a.b.c.d", 1), ("", 1)],
-            "valid_devspec": [("/dev/mmcblk0p3", 0), ("UUID=8AB1-C6BE", 0), ("LABEL=percept-root", 0), ("PARTUUID=abc-01", 0),
+            "valid_devspec": [("/dev/mmcblk0p3", 0), ("UUID=1234-ABCD", 0), ("LABEL=percept-root", 0), ("PARTUUID=abc-01", 0),
                               ("UUID=", 1), ("UUID=a b", 1), ("root", 1), ("/dev/../x", 1)],
             "valid_cmdline": [("root=UUID=x ro console=ttymxc0,115200", 0), ("a;b", 1), ("$(x)", 1), ("", 1)],
             "valid_iface_spec": [("auto", 0), ("eth0", 0), ("fc:34:97:00:00:01", 0), ("eth0;x", 1), ("zz:zz:zz:zz:zz:zz", 1)],
@@ -67,7 +67,7 @@ class LauncherShell(unittest.TestCase):
         self.assertEqual(self.call("valid_uint", "x", "1", "10")["rc"], "1")
 
     def test_esp_spec(self):
-        self.assertEqual(self.call("esp_spec", "console=x percept.esp=UUID=8AB1-C6BE quiet")["out"], "UUID=8AB1-C6BE")
+        self.assertEqual(self.call("esp_spec", "console=x percept.esp=UUID=1234-ABCD quiet")["out"], "UUID=1234-ABCD")
         self.assertEqual(self.call("esp_spec", "quiet")["out"], "/dev/mmcblk0p1")
         self.assertEqual(self.call("esp_spec", "percept.esp=bad;value")["out"], "/dev/mmcblk0p1")
 

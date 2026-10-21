@@ -12,10 +12,13 @@ Nothing here touched a board.
 | ext4 features GRUB 2.03 can read | Microsoft's root fs: `has_journal ext_attr resize_inode dir_index filetype extent 64bit flex_bg sparse_super large_file huge_file dir_nlink extra_isize metadata_csum`. Debian 13's `mke2fs` default adds `orphan_file` and `metadata_csum_seed`; with `-O ^orphan_file,^metadata_csum_seed` the feature list is **identical** to Microsoft's. Use `-b 4096` explicitly (small images default to 1 KiB blocks). **Still to confirm on hardware** that GRUB reads it. |
 | Populate ext4 rootless with root ownership | **Works:** `unshare -Ur mke2fs -d tree ...` records every file as uid/gid 0. |
 | Reproducible ext4 image | **Works:** with a fixed UUID, `-E hash_seed=` and `E2FSPROGS_FAKE_TIME`, two builds are byte-identical. |
-| Rootless `debootstrap --foreign` | **Fails with only one user id**: `tar: Cannot change ownership to uid 0, gid 42`. Needs a full uid/gid range, i.e. `newuidmap`/`newgidmap` from the `uidmap` package (`/etc/subuid` ranges already exist). `percept doctor` now checks for it. |
+| Rootless `debootstrap --foreign` with one user id | **Fails** (`tar: Cannot change ownership to uid 0, gid 42`). Needs `newuidmap`/`newgidmap` from `uidmap`; `percept doctor` checks for it. |
+| Full rootless arm64 trixie build (`uidmap` installed) | **Works, no errors or warnings.** Stage 1 (`--foreign`, ~14 s) and stage 2 (under qemu-user in a chroot, ~3 min) with `unshare --map-root-user --map-auto --mount [--pid --fork]`; stage 2 binds the host `/dev` and mounts `/proc` inside that private namespace (nothing leaks to the host). Result: 299 MB, `uname -m` aarch64, all system users created. Host-side the files carry mapped ids (e.g. `/etc/shadow` is 1000:100041). |
+| Pack that tree into ext4 | **Works, ~1 s for a 1 GiB image**, when `mke2fs -d` runs in the *same* `--map-root-user --map-auto` namespace: ids map back to 0/42 etc., setuid bits kept (`/usr/bin/passwd` 4755), `e2fsck` clean, features identical to Microsoft's. |
 
 ## Consequences
 
-- Add `uidmap` to the prerequisites; use `unshare --map-auto --map-root-user --mount` for the build chroot.
+- Prerequisites: the packages `doctor` lists, including `uidmap`. No sudo is needed after that.
+- The whole image-composition path (debootstrap, second stage, `mke2fs -d`) runs unprivileged on WSL2; always use the same `unshare --map-root-user --map-auto --mount` namespace for every step that touches the tree.
 - Layout v2 (64 MiB ESP with the stock kernel on it) is confirmed necessary, not optional, for the image path.
-- Remaining M0 spike once `uidmap` is installed: second-stage debootstrap under qemu-user, and boot-time-relevant checks of the resulting tree.
+- Not yet proven: that GRUB 2.03 on the board reads this ext4, that the qemu-built tree boots, and that `systemd` units behave the same as in the board-native build. Those need hardware (M5).

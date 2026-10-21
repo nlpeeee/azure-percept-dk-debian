@@ -36,9 +36,7 @@ cp linux-5.4.3/.config /out/build.config
 cp "$work/metadata/kernel-exports.json" /out/kernel-exports.json
 objdump -dr /out/arch.ko > /out/arch.disassembly
 objdump -dr /out/core.ko > /out/core.disassembly
-if grep -E 'sp_el0|__stack_chk' /out/arch.disassembly /out/core.disassembly; then
-    echo 'Unexpected task/canary access in module disassembly' >&2; exit 1
-fi
+python3 /src/kexecmod/check-disassembly.py /out/arch.disassembly /out/core.disassembly linux-5.4.3/include/generated/asm-offsets.h > /out/disassembly-check.json
 # Exercise the actual reset code with a fake register file; never real MMIO.
 gcc -O2 -Wall -Wextra -Werror -I"$mod/kernel" /src/kexecmod/tests/test_reset.c -o "$work/test-reset"
 "$work/test-reset" > /out/test-reset.log

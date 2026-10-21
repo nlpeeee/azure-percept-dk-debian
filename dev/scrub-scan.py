@@ -29,7 +29,7 @@ PATTERNS = [
     ("lab serial port", r"\bCOM8\b"),
     ("lab Windows path", r"\b[A-Z]:[/\\]percept\b"),
     ("lab build dir", r"/root/percept-kexec-work"),
-    ("default password", r"\bpercept/percept\b|PASSWORD=\"percept\"|password: percept"),
+    ("default password", r"(?<![\w/.-])percept/percept(?![\w-])|PASSWORD=\"percept\"|password: percept"),
     ("SSH public key material", r"ssh-(ed25519|rsa|dss)\s+AAAA[0-9A-Za-z+/=]{20,}|ecdsa-sha2-\S+\s+AAAA[0-9A-Za-z+/=]{20,}"),
     ("private key block", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     ("host key checking off", r"StrictHostKeyChecking[= ]+no\b"),

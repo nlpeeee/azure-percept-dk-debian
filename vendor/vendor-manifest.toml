@@ -52,7 +52,7 @@ used_by = ["esp", "boot-identity-check"]
 id = "linux-5.4.3"
 title = "Mainline Linux 5.4.3 source (kexec module build tree)"
 url = "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.3.tar.xz"
-sha256 = ""   # pin before first release
+sha256 = "6731682f32e1b1ee53b0e7f66b8dc263d25a0e809e78e2139cb0ed77c378ee51"   # matches kernel.org sha256sums.asc
 redistributable = true
 used_by = ["kexecmod"]
 
@@ -60,7 +60,7 @@ used_by = ["kexecmod"]
 id = "kexec-tools-2.0.25"
 title = "kexec-tools 2.0.25"
 url = "https://kernel.org/pub/linux/utils/kernel/kexec/kexec-tools-2.0.25.tar.xz"
-sha256 = ""   # pin before first release
+sha256 = "7ce2e5def38ec04f79feb107d02243dd586fbc68569eccf02f44bad3a13ec07d"   # matches kernel.org sha256sums.asc
 redistributable = true
 used_by = ["launcher"]
 

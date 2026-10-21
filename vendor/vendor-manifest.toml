@@ -68,7 +68,7 @@ used_by = ["launcher"]
 id = "uuu-1.5.243"
 title = "NXP Universal Update Utility (Windows)"
 url = "https://github.com/nxp-imx/mfgtools/releases/download/uuu_1.5.243/uuu.exe"
-sha256 = ""   # pin before first release
+sha256 = "f6b76a6246befabeadfebdc1cbfe58f35939596caf7b78717ceab599b0c85027"
 redistributable = true
 used_by = ["flash"]
 

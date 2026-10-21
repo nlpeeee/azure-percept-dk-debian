@@ -26,6 +26,7 @@ def sparse_copy(source,destination,offset):
         size=os.fstat(src.fileno()).st_size;pos=0
         while pos<size:
             try:
+                if not hasattr(os,'SEEK_DATA'):raise OSError(22,'extent lookup unavailable')
                 data=os.lseek(src.fileno(),pos,os.SEEK_DATA)
                 end=min(os.lseek(src.fileno(),data,os.SEEK_HOLE),size)
             except OSError as exc:

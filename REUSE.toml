@@ -1,0 +1,23 @@
+version = 1
+SPDX-PackageName = "azure-percept-dk-debian"
+
+# Default: installer code, scripts, docs and profiles are MIT.
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2025-2026 the azure-percept-dk-debian contributors"
+SPDX-License-Identifier = "MIT"
+
+# Derivatives of GPL-2.0 works: kexec-mod / kexec-module / kexec-tools patches,
+# device-tree helpers that link libfdt (GPL-2.0-or-later / BSD-2-Clause dual) and
+# the notes that describe the kexec-mod port.
+[[annotations]]
+path = [
+  "kexecmod/patches/**",
+  "kexecmod/NOTES.md",
+  "kexecmod/tests/**",
+  "launcher/fdt/*.c",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2025-2026 the azure-percept-dk-debian contributors; upstream authors as noted in each patch"
+SPDX-License-Identifier = "GPL-2.0-only"

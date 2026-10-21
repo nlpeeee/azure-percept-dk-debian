@@ -1,0 +1,81 @@
+# Third-party inputs. None are redistributed by this repository: `percept fetch`
+# downloads them from the vendor and refuses to continue on a hash mismatch.
+# An empty sha256 means "not pinned yet": fetch will refuse it until pinned.
+schema = 1
+
+[[input]]
+id = "ms-recovery-zip"
+title = "Azure Percept DK recovery image (Microsoft)"
+url = "https://download.microsoft.com/download/4/7/a/47af6fc2-d9a0-4e66-822b-ad36700fefff/Azure-Percept-DK-1.0.20220620.1126-public_preview_1.0.zip"
+size = 1157827160
+sha256 = "f0cd8aeaabc65c9b23c4a54c359789a4dfb2705ad6d281f78116349061e092f2"
+redistributable = false
+used_by = ["fetch", "build"]
+
+[[input]]
+id = "ms-fast-hab-fw"
+title = "Boot ROM/SPL/U-Boot/UEFI bundle flashed by uuu (inside the recovery ZIP)"
+container = "ms-recovery-zip"
+member = "fast-hab-fw.raw"
+size = 2710361
+sha256 = "1f8725869ee29c0fe55dc166bb8cb07084b61dabe4b153f536e76d5c4b9980d3"
+redistributable = false
+used_by = ["flash"]
+
+[[input]]
+id = "ms-emmc-script"
+title = "Microsoft's own uuu flash script (inside the recovery ZIP)"
+container = "ms-recovery-zip"
+member = "emmc_full.txt"
+size = 1083
+sha256 = "b933d520466c0efa28aa9b24612395349253b9856cf877f5d4568b1ce43a7f07"
+redistributable = false
+used_by = ["build", "flash"]
+
+[[input]]
+id = "ms-stock-kernel"
+title = "Stock Linux 5.4.3-26.cm1 arm64 Image (inside the .raw root filesystem, /boot/vmlinuz-5.4.3-mariner)"
+container = "ms-recovery-zip"
+sha256 = "fec6f292e734ab81c056a28ab0c3940ec7f00fcd39cec417cac9da52bb3f7ef2"
+redistributable = false
+used_by = ["kexecmod", "boot-identity-check"]
+
+[[input]]
+id = "ms-pe100-dtb"
+title = "Stock device tree pe100.dtb (inside the .raw ESP)"
+container = "ms-recovery-zip"
+sha256 = "629ff5e7c149451aec0e007e0418152f24a872a95bc673a85a007fd40d08a86e"
+redistributable = false
+used_by = ["esp", "boot-identity-check"]
+
+[[input]]
+id = "linux-5.4.3"
+title = "Mainline Linux 5.4.3 source (kexec module build tree)"
+url = "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.3.tar.xz"
+sha256 = ""   # pin before first release
+redistributable = true
+used_by = ["kexecmod"]
+
+[[input]]
+id = "kexec-tools-2.0.25"
+title = "kexec-tools 2.0.25"
+url = "https://kernel.org/pub/linux/utils/kernel/kexec/kexec-tools-2.0.25.tar.xz"
+sha256 = ""   # pin before first release
+redistributable = true
+used_by = ["launcher"]
+
+[[input]]
+id = "uuu-1.5.243"
+title = "NXP Universal Update Utility (Windows)"
+url = "https://github.com/nxp-imx/mfgtools/releases/download/uuu_1.5.243/uuu.exe"
+sha256 = ""   # pin before first release
+redistributable = true
+used_by = ["flash"]
+
+[[input]]
+id = "azureeyemodule"
+title = "Microsoft azureeyemodule 2301-1-noauth arm64 (optional camera runtime)"
+url = "https://mcr.microsoft.com/v2/azureedgedevices/azureeyemodule/manifests/2301-1-noauth"
+sha256 = "ce25188801bbb5ebf855e2c66a95d11cabdf3bc4947c9a254c10980f2adc32b6"
+redistributable = false
+used_by = ["camera"]

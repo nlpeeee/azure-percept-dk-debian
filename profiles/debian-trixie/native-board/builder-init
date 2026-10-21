@@ -1,0 +1,333 @@
+#!/bin/busybox sh
+# One-off trixie builder boot under Debian 6.12 (derived from the RAM-only test
+# init). Mounts the Bookworm rootfs read-write ONLY to run stage-b.sh in the
+# trixie chroot under trixie-build/, then unmounts it and reboots to stock.
+BB=/bin/busybox
+BOOKWORM_UUID=4df3ecc1-c7b9-4162-8819-b2af62d6e5d8
+# The static BusyBox has no blkid: compare the ext4 superblock UUID directly
+# (s_uuid at byte offset 1024 + 0x68).
+BOOKWORM_UUID_HEX=4df3ecc1c7b941628819b2af62d6e5d8
+P3=/mnt/p3
+TRIXIE=$P3/root/percept-kexec-work/trixie-build/root
+STAGE_B_TIMEOUT=1500
+SENDER=/bin/udp_log_sender
+CONFIG=/etc/percept-test
+SOURCE_IP=192.168.1.60
+SOURCE_PREFIX=24
+RECEIVER_IP=192.168.1.47
+RECEIVER_PORT=6666
+TARGET_MAC=fc:34:97:65:90:a0
+REBOOT_AT=1800
+sequence=0
+network_ready=0
+module_failures=0
+module_loaded=0
+module_state=builtin_mode
+
+# Syntax-check freely, but reject accidental ordinary execution on a host.
+if [ "$$" != 1 ]; then
+    if [ "${1:-}" != --timer ] || [ "${PPID:-0}" != 1 ]; then
+        printf '%s\n' 'percept-custom: only PID1 or its timer child may execute this script' >&2
+        exit 1
+    fi
+fi
+
+local_log() {
+    printf '%s\n' "percept-custom: $*"
+    if [ -c /dev/kmsg ]; then
+        printf '<5>percept-custom: %s\n' "$*" >/dev/kmsg 2>/dev/null || true
+    fi
+}
+
+read_identity() {
+    experiment=$($BB cat "$CONFIG/experiment-id" 2>/dev/null)
+    source_boot=$($BB cat "$CONFIG/source-boot-id" 2>/dev/null)
+    actual_boot=$($BB cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+    expected_release=$($BB cat "$CONFIG/expected-kernel-release" 2>/dev/null)
+    actual_release=$($BB uname -r)
+}
+
+emit() {
+    sequence=$((sequence + 1))
+    local_log "event=$1 detail=$2 sequence=$sequence source_boot=$source_boot actual_boot=$actual_boot"
+    if [ "$network_ready" = 1 ]; then
+        # The existing sender accepts at most 128 token characters for detail.
+        # Keep full identity text in status.txt; encode runtime text for UDP.
+        detail_remaining=$2
+        detail_token=
+        detail_length=0
+        while [ -n "$detail_remaining" ] && [ "$detail_length" -lt 128 ]; do
+            detail_tail=${detail_remaining#?}
+            detail_character=${detail_remaining%"$detail_tail"}
+            detail_remaining=$detail_tail
+            case "$detail_character" in
+                [A-Za-z0-9_.:]|-) detail_token=$detail_token$detail_character ;;
+                *) detail_token=${detail_token}_ ;;
+            esac
+            detail_length=$((detail_length + 1))
+        done
+        [ -n "$detail_token" ] || detail_token=empty
+        "$SENDER" "$SOURCE_IP" "$RECEIVER_IP" "$RECEIVER_PORT" \
+            "$experiment" "$source_boot" "$actual_boot" "$sequence" "$1" "$detail_token"
+        result=$?
+        if [ "$result" != 0 ]; then local_log "udp_ack_failed_status_$result"; fi
+    fi
+}
+
+boot_seconds() {
+    # Failure means the timer should request a reboot immediately.
+    seconds=$REBOOT_AT
+    if IFS=' ' read -r up remainder </proc/uptime; then
+        seconds=${up%%.*}
+    fi
+}
+
+force_reboot() {
+    # No filesystem sync is needed: every writable filesystem is RAM-backed.
+    local_log "requesting_normal_firmware_reboot"
+    $BB timeout -k 1 3 "$BB" reboot -f
+    # If the direct request returned or timed out, ask BusyBox PID1 to reboot.
+    # SIGTERM is BusyBox init's reboot signal; never request halt or poweroff.
+    $BB kill -TERM 1
+}
+
+load_modules() {
+    : >/run/module-load.log
+    if [ -n "$expected_release" ] && [ "$actual_release" != "$expected_release" ]; then
+        module_state=kernel_release_mismatch
+        module_failures=1
+        printf 'expected=%s actual=%s; refusing module insertion\n' "$expected_release" "$actual_release" >>/run/module-load.log
+        local_log "$module_state"
+        return
+    fi
+    [ -s "$CONFIG/module-load-order" ] || return
+    module_state=loading
+    # The builder resolved depmod hard/soft dependencies and decompressed every
+    # module. Explicit paths avoid reliance on BusyBox modprobe build options.
+    while IFS= read -r module_path; do
+        [ -n "$module_path" ] || continue
+        printf 'loading=%s\n' "$module_path" >>/run/module-load.log
+        if $BB timeout -k 1 8 "$BB" insmod "$module_path" >>/run/module-load.log 2>&1; then
+            module_loaded=$((module_loaded + 1))
+            local_log "module_loaded_$module_path"
+            printf 'result=loaded\n' >>/run/module-load.log
+        else
+            result=$?
+            module_failures=$((module_failures + 1))
+            local_log "module_load_failed_status_${result}_$module_path"
+            printf 'result=failed status=%s\n' "$result" >>/run/module-load.log
+        fi
+    done <"$CONFIG/module-load-order"
+    module_state=complete
+    [ "$module_failures" = 0 ] || module_state=failed
+}
+
+read_platform_identity() {
+    cpu_count=0
+    memory_kb=unknown
+    dt_model=unavailable
+    if [ -r /proc/cpuinfo ]; then
+        while IFS= read -r line; do
+            case "$line" in processor*) cpu_count=$((cpu_count + 1)) ;; esac
+        done </proc/cpuinfo
+    fi
+    if [ -r /proc/meminfo ]; then
+        while read -r field value unit; do
+            case "$field" in MemTotal:) memory_kb=$value; break ;; esac
+        done </proc/meminfo
+    fi
+    if [ -r /sys/firmware/devicetree/base/model ]; then
+        dt_model=$($BB cat /sys/firmware/devicetree/base/model)
+    fi
+}
+
+if [ "${1:-}" = --timer ]; then
+    read_identity
+    network_ready=1
+    # Timer record numbers cannot collide with bootstrap records.
+    sequence=900000
+    while :; do
+        boot_seconds
+        [ "$seconds" -lt "$REBOOT_AT" ] || break
+        $BB sleep 1
+    done
+    emit auto_reboot "deadline_${REBOOT_AT}_seconds"
+    while :; do
+        force_reboot
+        $BB sleep 5
+    done
+fi
+
+read_identity
+local_log "init_entered_ram_only_test"
+$BB mkdir -p /proc /sys /dev /run /www /etc
+if ! $BB mount -t proc proc /proc; then
+    local_log "proc_mount_failed"
+    while :; do $BB reboot -f; $BB sleep 5; done
+fi
+if ! $BB mount -t sysfs sysfs /sys; then local_log "sysfs_mount_failed"; fi
+if ! $BB mount -t devtmpfs devtmpfs /dev; then local_log "devtmpfs_mount_failed"; fi
+# /run is still memory-backed if tmpfs cannot be mounted over the initramfs dir.
+if ! $BB mount -t tmpfs -o mode=0755 tmpfs /run; then local_log "run_tmpfs_mount_failed_using_initramfs"; fi
+read_identity
+
+# Start an independent child before network discovery. It remains a child of
+# PID1 when this script execs BusyBox init, which reaps it and every other child.
+$BB sh /init --timer &
+
+load_modules
+read_platform_identity
+
+interface=
+boot_seconds
+find_deadline=$((seconds + 25))
+while :; do
+    for path in /sys/class/net/*; do
+        [ -r "$path/address" ] || continue
+        IFS= read -r candidate_mac <"$path/address"
+        if [ "$candidate_mac" = "$TARGET_MAC" ]; then
+            interface=${path##*/}
+            break
+        fi
+    done
+    [ -z "$interface" ] || break
+    boot_seconds
+    [ "$seconds" -lt "$find_deadline" ] || break
+    $BB sleep 1
+done
+
+if [ -n "$interface" ]; then
+    local_log "matched_interface_$interface"
+    if $BB timeout -k 1 5 "$BB" ip link set dev "$interface" up; then
+        tries=0
+        while [ "$tries" -lt 12 ]; do
+            carrier=0
+            if [ -r "/sys/class/net/$interface/carrier" ]; then
+                IFS= read -r carrier <"/sys/class/net/$interface/carrier"
+            fi
+            [ "$carrier" = 1 ] && break
+            $BB sleep 1
+            tries=$((tries + 1))
+        done
+        # No DHCP client, DNS configuration or gateway is used in this test.
+        if [ "$carrier" = 1 ] &&
+           $BB timeout -k 1 5 "$BB" ip address add "$SOURCE_IP/$SOURCE_PREFIX" dev "$interface" &&
+           $BB timeout -k 1 5 "$BB" ip route add "$RECEIVER_IP/32" dev "$interface" scope link src "$SOURCE_IP"; then
+            network_ready=1
+            emit custom_kernel_boot ram_only_init_reached
+            emit network_ready "$interface"
+            emit kernel_release "$actual_release"
+            emit expected_kernel_release "${expected_release:-unspecified}"
+            emit platform_identity "cpus_${cpu_count}_memory_kb_$memory_kb"
+            emit device_tree_model "$dt_model"
+            emit module_load "state_${module_state}_loaded_${module_loaded}_failed_$module_failures"
+        else
+            local_log "static_network_setup_failed"
+        fi
+    else
+        local_log "interface_up_failed"
+    fi
+else
+    local_log "target_mac_not_found"
+fi
+
+# Find the Bookworm rootfs by UUID: under 6.12 the eMMC is mmcblk1.
+unmount_build() {
+    for m in "$TRIXIE/dev/pts" "$TRIXIE/dev" "$TRIXIE/sys" "$TRIXIE/proc"; do
+        $BB umount "$m" 2>/dev/null || $BB umount -l "$m" 2>/dev/null
+    done
+    $BB sync
+    if ! $BB umount "$P3"; then
+        $BB mount -o remount,ro "$P3" || local_log "p3_unmount_and_remount_ro_failed"
+    fi
+    $BB sync
+}
+
+run_stage_b() {
+    build_state=not_started
+    root_dev=
+    for dev in /dev/mmcblk*p3; do
+        [ -b "$dev" ] || continue
+        uuid_hex=$($BB dd if="$dev" bs=1 skip=1128 count=16 2>/dev/null | $BB od -An -tx1 | $BB tr -d ' \n')
+        if [ "$uuid_hex" = "$BOOKWORM_UUID_HEX" ]; then root_dev=$dev; break; fi
+    done
+    if [ -z "$root_dev" ]; then build_state=bookworm_rootfs_not_found; return; fi
+    emit build_rootfs_found "$root_dev"
+    $BB mkdir -p "$P3"
+    if ! $BB mount -t ext4 -o rw,noatime "$root_dev" "$P3"; then
+        build_state=p3_mount_failed; return
+    fi
+    if [ ! -x "$TRIXIE/percept-build/stage-b.sh" ] || [ -e "$TRIXIE/percept-build/stage-b.done" ]; then
+        build_state=stage_b_missing_or_already_done
+        unmount_build; return
+    fi
+    $BB mount -t proc proc "$TRIXIE/proc" &&
+    $BB mount -t sysfs sysfs "$TRIXIE/sys" &&
+    $BB mount -o bind /dev "$TRIXIE/dev" &&
+    $BB mkdir -p "$TRIXIE/dev/pts" &&
+    $BB mount -t devpts devpts "$TRIXIE/dev/pts" || {
+        build_state=chroot_mounts_failed; unmount_build; return
+    }
+    emit stage_b begin
+    log=$TRIXIE/percept-build/stage-b.log
+    # Mirror progress to UART; keep the exit status out of the pipeline.
+    {
+        $BB timeout -k 10 "$STAGE_B_TIMEOUT" "$BB" env -i \
+            PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root TERM=dumb \
+            "$BB" chroot "$TRIXIE" /bin/bash /percept-build/stage-b.sh
+        echo "$?" >/run/stage-b.rc
+    } 2>&1 | $BB tee "$log" >/dev/console
+    rc=$($BB cat /run/stage-b.rc 2>/dev/null)
+    build_state=stage_b_exit_${rc:-unknown}
+    if [ "$rc" = 0 ] && [ -e "$TRIXIE/percept-build/stage-b.done" ]; then
+        build_state=stage_b_done
+    fi
+    unmount_build
+}
+
+run_stage_b
+emit build_result "$build_state"
+
+{
+    printf 'Temporary custom-kernel test; all filesystems writable here are RAM-backed.\n'
+    printf 'Automatic firmware reboot requested at %s seconds of kernel uptime.\n\n' "$REBOOT_AT"
+    printf 'experiment=%s\nsource_boot=%s\nactual_boot=%s\n\n' "$experiment" "$source_boot" "$actual_boot"
+    printf 'expected_kernel_release=%s\nactual_kernel_release=%s\n' "${expected_release:-unspecified}" "$actual_release"
+    printf 'module_state=%s loaded=%s failed=%s\n' "$module_state" "$module_loaded" "$module_failures"
+    printf 'device_tree_model=%s\ncpus=%s memory_kb=%s\n' "$dt_model" "$cpu_count" "$memory_kb"
+    $BB uname -a
+    printf '\nCPU identity:\n'
+    $BB cat /proc/cpuinfo
+    printf '\nMemory:\n'
+    $BB cat /proc/meminfo
+    printf '\nDevice tree compatible:\n'
+    if [ -r /sys/firmware/devicetree/base/compatible ]; then
+        compatible=$($BB cat /sys/firmware/devicetree/base/compatible)
+        printf '%s\n' "$compatible"
+    fi
+    printf '\nRequested module roots:\n'
+    $BB cat "$CONFIG/module-roots"
+    printf '\nModule insertion results:\n'
+    $BB cat /run/module-load.log
+    printf '\nLoaded kernel modules:\n'
+    $BB cat /proc/modules
+    printf '\nCommand line:\n'
+    $BB cat /proc/cmdline
+    printf '\nKernel uptime:\n'
+    $BB cat /proc/uptime
+    printf '\nInterfaces:\n'
+    $BB timeout -k 1 3 "$BB" ip address show
+    printf '\nRoutes:\n'
+    $BB timeout -k 1 3 "$BB" ip route show
+    printf '\nMounts:\n'
+    $BB cat /proc/mounts
+    printf '\nKernel log:\n'
+    $BB timeout -k 1 3 "$BB" dmesg
+} >/www/status.txt 2>&1
+
+# The build is finished (or failed) and p3 is unmounted: go back to stock.
+emit builder_complete "$build_state"
+while :; do
+    force_reboot
+    $BB sleep 5
+done

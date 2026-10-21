@@ -1,0 +1,41 @@
+# Debian trixie on Azure Percept DK — production GRUB config.
+# Entry 0 boots the stock kernel with the launcher initramfs, which kexecs into
+# Debian 6.12 on p3. Entry 1 is the same launcher forced into rescue mode
+# (stock kernel, dropbear SSH).
+#
+# Entry 0 is chosen only while percept_tries in the ESP grubenv is 1-4. Each
+# launcher boot decrements it, and trixie's percept-boot-ok.service resets it to
+# 4, so repeated boots that never reach trixie end up in rescue. An unreadable
+# grubenv also means rescue. The countdown avoids "elif" and arithmetic, which
+# this GRUB may lack.
+
+set timeout=0
+set default=1
+set fallback=1
+set root=(hd0,gpt3)
+set efiroot=(hd0,gpt1)
+
+set percept_tries=
+set percept_next=
+load_env -f $efiroot/boot/grub2/grubenv percept_tries
+if [ "$percept_tries" = "4" ]; then set percept_next=3; fi
+if [ "$percept_tries" = "3" ]; then set percept_next=2; fi
+if [ "$percept_tries" = "2" ]; then set percept_next=1; fi
+if [ "$percept_tries" = "1" ]; then set percept_next=0; fi
+if [ -n "$percept_next" ]; then
+    set percept_tries=$percept_next
+    save_env -f $efiroot/boot/grub2/grubenv percept_tries
+    set default=0
+fi
+
+menuentry "Debian trixie" {
+    linux /boot/vmlinuz-5.4.3-mariner console=ttymxc0,115200 loglevel=7
+    initrd $efiroot/percept/launcher.cpio.gz
+    devicetree $efiroot/pe100-usbc.dtb
+}
+
+menuentry "Percept rescue" {
+    linux /boot/vmlinuz-5.4.3-mariner console=ttymxc0,115200 loglevel=7 percept.mode=rescue
+    initrd $efiroot/percept/launcher.cpio.gz
+    devicetree $efiroot/pe100.dtb
+}

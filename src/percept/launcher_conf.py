@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: MIT
+"""Generate and lint the ESP files the launcher reads.
+
+``compat="current"`` emits only the keys the shipped launcher/init understands.
+``compat="v2"`` emits the generalised key set specified in docs/launcher-conf.md
+(implemented by the launcher in milestone M4). ``parse`` mirrors init's rules,
+including rejecting unknown keys, so generated files are checked against it.
+"""
+import re
+
+CURRENT_KEYS = ("mode", "kernel", "initrd", "cmdline", "kernel_sha256", "initrd_sha256",
+                "upper_ram", "thermal_fix", "media", "cpu_profile")
+V2_KEYS = CURRENT_KEYS + (
+    "profile", "esp", "root", "root_fstype", "root_opts", "kernel_format",
+    "net_mode", "net_if", "net_ip", "net_prefix", "net_gw",
+    "log_receiver_ip", "log_receiver_port", "fail_limit", "rescue_console",
+    "dtb_fixups", "dtb_fixups_policy",
+)
+CMDLINE_RE = re.compile(r"^[A-Za-z0-9_.,=:/+ -]+$")
+PATH_RE = re.compile(r"^/[A-Za-z0-9_.+/-]*$")
+GRUBENV_SIZE = 1024
+
+
+class LauncherConfError(ValueError):
+    pass
+
+
+def render(resolved, cfg, compat="current"):
+    """Production launcher.conf text for a resolved profile + board config."""
+    f = resolved["fixups"]["launcher"]
+    media = "gpu-vpu" if "media-gpu-vpu" in f else "gpu" if "media-gpu" in f else "none"
+    lines = ["mode=kexec", "kernel=" + resolved["kernel_path"], "initrd=" + resolved["initrd_path"]]
+    if compat == "current":
+        lines += ["upper_ram=%d" % ("upper-ram" in f), "thermal_fix=%d" % ("thermal" in f), "media=" + media]
+    else:
+        lines += ["dtb_fixups=" + ",".join(f), "dtb_fixups_policy=skip-inapplicable"]
+        lines += rescue_network_lines(cfg)
+        lines.append("fail_limit=%d" % cfg["rescue"]["fail_limit"])
+    lines.append("cmdline=" + resolved["cmdline"])
+    text = "\n".join(lines) + "\n"
+    parse(text, compat)  # never emit something the launcher would reject
+    return text
+
+
+def rescue_network_lines(cfg):
+    r = cfg["rescue"]
+    if r["net_mode"] == "dhcp":
+        out = ["net_mode=dhcp", "net_if=auto"]
+    else:
+        out = ["net_mode=static", "net_if=auto", "net_ip=" + r["address"], "net_prefix=%d" % r["prefix"]]
+        if r.get("gateway"):
+            out.append("net_gw=" + r["gateway"])
+    if r.get("log_receiver_ip"):
+        out += ["log_receiver_ip=" + r["log_receiver_ip"], "log_receiver_port=%d" % r["log_receiver_port"]]
+    return out
+
+
+def render_rescue(cfg, compat="current"):
+    """launcher.conf that forces rescue mode (also the safe default for a fresh ESP)."""
+    if compat == "current":
+        return "mode=rescue\n"
+    return "mode=rescue\n" + "\n".join(rescue_network_lines(cfg)) + "\n"
+
+
+def parse(text, compat="current"):
+    """Parse like init: strict keys, simple value rules. Returns an ordered dict."""
+    allowed = CURRENT_KEYS if compat == "current" else V2_KEYS
+    out = {}
+    for n, raw in enumerate(text.split("\n"), 1):
+        line = raw.rstrip("\r")
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise LauncherConfError("line %d: malformed" % n)
+        key, value = line.split("=", 1)
+        if key not in allowed:
+            raise LauncherConfError("line %d: unknown key %r" % (n, key))
+        out[key] = value
+    mode = out.get("mode", "kexec")
+    if mode not in ("kexec", "rescue"):
+        raise LauncherConfError("invalid mode")
+    if mode == "kexec":
+        for key in ("kernel", "initrd"):
+            if key in out and not PATH_RE.match(out[key]):
+                raise LauncherConfError("invalid %s path" % key)
+        if not out.get("cmdline") or not CMDLINE_RE.match(out["cmdline"]):
+            raise LauncherConfError("invalid or empty cmdline")
+        if out.get("media", "none") not in ("none", "gpu", "gpu-vpu"):
+            raise LauncherConfError("invalid media")
+        for key in ("upper_ram", "thermal_fix"):
+            if out.get(key, "0") not in ("0", "1"):
+                raise LauncherConfError("invalid " + key)
+    return out
+
+
+def grubenv(tries):
+    """The 1024-byte GRUB environment block with ``percept_tries=<tries>``."""
+    if not 0 <= tries <= 4:
+        raise ValueError("tries must be 0-4")
+    head = ("# GRUB Environment Block\npercept_tries=%d\n" % tries).encode("ascii")
+    return head + b"#" * (GRUBENV_SIZE - len(head))
+
+
+def failcount(value=0):
+    return ("%d\n" % value).encode("ascii")

@@ -16,6 +16,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/config.sh"
+: "${ROOT_PASSWORD:?set ROOT_PASSWORD in config.sh (no default)}"
+: "${NEW_USER_PASSWORD:?set NEW_USER_PASSWORD in config.sh (no default)}"
 
 OUTPUT_TARBALL="$SCRIPT_DIR/sources/debian-rootfs.tar.zst"
 ROOTFS_DIR="$(mktemp -d)/percept-rootfs"
@@ -42,8 +44,7 @@ echo "  Debian ${DEBIAN_SUITE} arm64 Rootfs Builder"
 echo "  Target: Azure Percept DK (NXP i.MX8MQ)"
 echo "=========================================================="
 echo "  Output     : ${OUTPUT_TARBALL}"
-echo "  Root pass  : ${ROOT_PASSWORD}"
-echo "  User       : ${NEW_USER} / ${NEW_USER_PASSWORD}"
+echo "  User       : ${NEW_USER}"
 echo "  Static IP  : ${STATIC_IP} (example only, DHCP default)"
   echo "  Wi-Fi SSID : ${WIFI_SSID:-<not configured>}"
 echo "=========================================================="

@@ -1,0 +1,2 @@
+# Stay on the stock kernel in rescue mode (dropbear SSH, p3 not mounted).
+mode=rescue

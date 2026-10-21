@@ -1,0 +1,10 @@
+# The smallest useful board: one user who logs in with your SSH key, DHCP everywhere.
+# Copy to boards/mine/board.toml, or:  python percept configure --from examples/board.minimal.toml
+schema = 1
+
+[board]
+name = "mine"
+
+[[user]]
+name = "percept"
+authorized_keys_file = "~/.ssh/id_ed25519.pub"

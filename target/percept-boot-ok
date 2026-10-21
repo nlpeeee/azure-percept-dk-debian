@@ -1,0 +1,19 @@
+#!/bin/sh
+# Mark this trixie boot good: reset the stock-kernel launcher's failure counter
+# and GRUB's launcher countdown (percept_tries) on the ESP.
+set -eu
+esp=/boot/efi
+mountpoint -q "$esp" || mount "$esp"
+counter=$esp/percept/failcount
+grubenv=$esp/boot/grub2/grubenv
+[ -e "$counter" ] || exit 0
+printf '0\n' >"$counter"
+if [ -e "$grubenv" ]; then
+    # GRUB's environment block is exactly 1024 bytes, padded with '#'.
+    block=$(printf '# GRUB Environment Block\npercept_tries=4\n')
+    { printf '%s\n' "$block"; head -c $((1024 - ${#block} - 1)) /dev/zero | tr '\0' '#'; } >"$grubenv.new"
+    [ "$(stat -c %s "$grubenv.new")" = 1024 ]
+    mv "$grubenv.new" "$grubenv"
+fi
+sync
+echo "percept-boot-ok: launcher failure counter and GRUB countdown reset"

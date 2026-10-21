@@ -1,17 +1,35 @@
-# Source firmware — Microsoft proprietary, not redistributable
-sources/Azure-Percept-DK.raw
-sources/fast-hab-fw.raw
-sources/vmlinuz-mariner
-sources/ms-modules.tar.gz
-sources/88x2ce.ko
-sources/rtl8822cu_fw
-sources/rtl8822cu_config
-sources/debian-rootfs.tar.zst
+# Per-board configuration and secrets: never commit
+boards/*
+!boards/.gitkeep
+secrets.toml
+*.key
+*.pem
+*-PERSONAL.*
+credentials.txt
 
-# Build output
-output/
+# Build state and vendor downloads
+cache/
+out/
+logs/
+*.raw
+*.zst
+*.img
+*.cpio
+*.cpio.gz
+*.ko
 
-# OS junk
+# Evidence and captures
+*.log
+*.pcap
+UART/
+pics/
+sources/
+
+# Python / editor / OS
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
 Thumbs.db
 .DS_Store
 *.swp

@@ -1,0 +1,75 @@
+# Debian 13 userland with a kernel YOU supply (os.kernel.source = "files").
+# Same contract and fixups as debian-trixie; see docs/profiles.md before using.
+schema = 1
+id = "byo-kernel"
+title = "Debian 13 userland with your own arm64 kernel (experimental)"
+status = "experimental"
+
+[rootfs]
+type = "debootstrap"
+suite = "trixie"
+mirror = "http://deb.debian.org/debian"
+variant = "minbase"
+components = ["main", "contrib", "non-free-firmware"]
+include = [
+  "systemd", "systemd-sysv", "dbus", "initramfs-tools", "kmod", "ca-certificates", "locales",
+  "openssh-server", "sudo", "nano", "less", "curl", "wget", "iproute2", "iputils-ping",
+  "systemd-resolved", "systemd-timesyncd", "e2fsprogs", "dosfstools", "fdisk", "cloud-guest-utils",
+  "pciutils", "usbutils", "i2c-tools", "htop", "bash-completion", "zstd", "wpasupplicant",
+]
+builder = "qemu-user"
+min_size_mib = 2048
+
+[kernel]
+source = "files"
+format = "Image"
+require_initrd = true
+validated_releases = []
+
+[boot]
+kernel_path = "/vmlinuz"           # Debian's own symlinks: kernel updates keep working
+initrd_path = "/initrd.img"
+
+[contract]
+config_required = [
+  "ARCH_MXC", "CLK_IMX8MQ", "PINCTRL_IMX8MQ", "IMX_GPCV2", "PCI_IMX6_HOST", "IGB",
+  "MMC_SDHCI_ESDHC_IMX", "EXT4_FS", "RESET_IMX7", "I2C_IMX", "SERIAL_IMX", "NVMEM_IMX_OCOTP",
+]
+initramfs_modules = ["imx2_wdt", "sdhci-esdhc-imx", "ext4"]
+cmdline_baseline = "console=ttymxc0,115200 earlycon=ec_imx6q,0x30860000 cpuidle.off=1 clk_ignore_unused pd_ignore_unused efi=noruntime net.ifnames=0 module_blacklist=rohm_bd718x7,bd718x7_regulator,imx_cpufreq_dt cma=256M"
+
+[features]
+gpu = { default = true }
+vpu = { default = true, requires = ["gpu"] }
+usb_c_host = { default = true }
+camera = { default = false }
+upper_ram = { default = true }
+thermal = { default = true }
+
+# Device-tree fixups: valid for mainline 6.12 bindings only. They are chosen at
+# build time from the kernel release and written to the launcher config.
+[[fixup]]
+name = "upper-ram"
+kernels = ["6.12.*"]
+feature = "upper_ram"
+
+[[fixup]]
+name = "thermal"
+kernels = ["6.12.*"]
+feature = "thermal"
+
+[[fixup]]
+name = "media-gpu"
+kernels = ["6.12.*"]
+when = { gpu = true, vpu = false }
+
+[[fixup]]
+name = "media-gpu-vpu"
+kernels = ["6.12.*"]
+when = { gpu = true, vpu = true }
+
+[[fixup]]
+name = "usbc-extcon"
+kernels = ["6.12.*"]
+stage = "esp-dtb"
+feature = "usb_c_host"

@@ -1,0 +1,41 @@
+# Template for a new OS profile. Copy this directory to profiles/<your-id>/,
+# edit, then run:  python percept profile check profiles/<your-id>
+# See docs/profiles.md for what each section means.
+schema = 1
+id = "my-os"                       # must equal the directory name
+title = "My OS description"
+status = "experimental"            # tested | community | experimental
+
+[rootfs]
+type = "debootstrap"               # debootstrap | tarball | prebuilt
+suite = "trixie"
+mirror = "http://deb.debian.org/debian"
+variant = "minbase"
+builder = "qemu-user"
+min_size_mib = 2048
+# hooks = ["10-my-setup.sh"]       # files in hooks/, run in the arm64 chroot in order
+
+[kernel]
+source = "distro"                  # distro | files | custom
+package = "linux-image-arm64"
+pin = "6.12.*"
+format = "Image"
+require_initrd = true
+validated_releases = []            # globs of kernel releases you have booted successfully
+
+[boot]
+kernel_path = "/vmlinuz"
+initrd_path = "/initrd.img"
+
+[contract]
+config_required = []
+initramfs_modules = ["imx2_wdt", "sdhci-esdhc-imx", "ext4"]
+cmdline_baseline = "console=ttymxc0,115200 cpuidle.off=1 clk_ignore_unused pd_ignore_unused"
+
+[features]
+# gpu = { default = false }
+
+# [[fixup]]
+# name = "upper-ram"
+# kernels = ["6.12.*"]
+# feature = "upper_ram"

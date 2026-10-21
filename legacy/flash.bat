@@ -3,7 +3,8 @@ REM ============================================================================
 REM Azure Percept DK — Flash Debian Image (Windows)
 REM
 REM Usage:
-REM   1. Put device in USB recovery mode (hold recovery button, power on)
+REM   1. Request USB recovery with vendor flagutil + orderly reboot; see README.
+REM      Without SSH, follow the board's documented internal DIP-switch procedure.
 REM   2. Double-click this file or run from PowerShell
 REM ============================================================================
 
@@ -50,7 +51,7 @@ if %errorlevel% equ 0 (
     echo   1. Unplug USB cable
     echo   2. Power cycle the board
     echo   3. Wait 30-60 seconds
-    echo   4. SSH to: root@192.168.1.100  (password: percept)
+    echo   4. SSH to: root@192.168.1.100 
     echo   5. Run:    bash /root/post_flash.sh
     echo.
 ) else (

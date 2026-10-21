@@ -1,0 +1,1620 @@
+diff -urN a/PERCEPT.md b/PERCEPT.md
+--- a/PERCEPT.md	1970-01-01 00:00:00.000000000 +0000
++++ b/PERCEPT.md	2026-10-21 20:06:06.397968300 +0100
+@@ -0,0 +1,138 @@
++# Experimental Percept frontend
++
++On 2026-10-20, this port's two modules **loaded without Microsoft's seed,
++staged three stock-kernel segments with `execute=0`, and unloaded successfully**
++on a Percept running `5.4.3-26.cm1`. A separate hello module also loaded and
++unloaded. A later controlled reboot attempted execution with a marked payload,
++but the board returned through its normal boot path without that marker.
++**A successful MMU-off handoff and kernel jump remain unconfirmed.** No output
++from the final shutdown hook survived, so the failing stage is unknown. The
++temporary hook was removed and the board's services and containers recovered.
++
++Subsequent non-executing diagnostics passed on the same device: all 9,218
++staged source pages matched the intended Image, DTB and purgatory, including
++zero padding. The address walker agreed with CPU translations for the reset
++and table pages; the inactive identity-map descriptors passed validation.
++The diagnostic module insertions and removals all returned zero. These checks
++do not install TTBR0 or establish that the MMU-off transition works.
++
++The running kernel consumes a randomized `struct module` before initialization.
++The experiment rebuilds that zero-initialized descriptor using the name/init/exit
++positions observed in stock ELF bytes and relocations. Merely changing the two
++driver interfaces or copying vermagic is insufficient.
++
++The upstream base is commit `4ba956fd60b29d2fea324515596b392afdcfa2c5`.
++
++## Changes
++
++- Resolve the running kernel's `init_mm` as an opaque pointer. Resolve
++  `swapper_pg_dir` independently, avoiding `pgd_offset_k()` and its hidden
++  `init_mm.pgd` access. Resolve `__boot_cpu_mode` directly instead of decoding
++  instructions from another function. Resolve the host's real
++  `cpus_are_stuck_in_kernel()` guard rather than returning constant false.
++- Build a three- or four-level identity map for 4K pages. The Percept has four
++  levels and 48-bit VA. Align the MMU-off reset routine to a page and assert it
++  fits there. Flush the page tables before use.
++- Check the inactive identity map and compare module VA-to-PA results against
++  `AT S1E1R`, preserving PAR with interrupts masked. Reject unsupported or
++  inconsistent mappings during initialization. Restore the native pre-MMU-off
++  workaround sequence; this is not a diagnosed fix for the earlier attempt.
++- Correct the instruction-cache flush's end address and the Linux 5.4
++  `totalram_pages()` API.
++- Add an optional `PARAM_LOADER=1` frontend which constructs no `file_operations`
++  and registers no character device or custom sysfs file. It uses `kernel_read`
++  and kernel buffers, with no user-copy payload path.
++- Before publishing a staged image, validate its bounded relocation list and
++  compare every source page against the bundle plus zero padding. The diagnostic
++  reads source pages, never writes destination addresses, and bounds total
++  destination memory to 512 MiB. It trusts module-generated list pointers;
++  `pfn_valid()` alone does not establish ownership of an indirection page.
++- Disable stack protection in this experimental frontend's two modules because
++  the host enables per-task canaries, which otherwise embed a randomized
++  `task_struct` offset. This is a deliberate experimental tradeoff, not a
++  claim that all implicit header accesses have been eliminated.
++- Use direct-map page copying on ARM64 to avoid `copy_highpage()`'s hidden
++  `current->pagefault_disabled` access. The final core and ARM64 disassemblies
++  contain no `sp_el0` or stack-canary accesses.
++- Reject `shim_hyp=1`: the upstream shim has unresolved dispatch/cache issues.
++
++## Prepared segments, not a raw Image
++
++The relocation assembly clears x0 before jumping to the image entry. ARM64 Linux
++needs a DTB address in x0. A normal `kexec-tools` load prepares a trampoline and
++DTB arrangement which must be preserved. The new frontend therefore reads a
++bundle of **already prepared kexec segments**, not just an Image and command line.
++
++Build the capture library on an ARM64 Linux system:
++
++```sh
++make -C user capture.so
++```
++
++With a compatible `kexec-tools` build, the following captures its legacy
++`kexec_load` request. The library writes a new file with mode 0600 and refuses
++to overwrite an existing file. It never forwards a kexec syscall or reboot:
++
++```sh
++KEXEC_BUNDLE=/root/same-kernel.bundle LD_PRELOAD="$PWD/user/capture.so" \
++  kexec -c -l /boot/vmlinuz --reuse-cmdline --dtb=/sys/firmware/fdt
++```
++
++The capture library fails other direct calls through `syscall()` with ENOSYS.
++Some `kexec-tools` builds may need a more targeted interposer. Run the offline
++bundle checker before considering module loading:
++
++```sh
++python3 ../../tools/check_kexec_bundle.py /root/same-kernel.bundle
++```
++
++A bundle is tied to the board's memory reservations and selected boot payload.
++Its structural validity does not prove its destinations or bootability.
++
++## Format
++
++All integers are little endian, with no padding:
++
++| Part | Fields |
++|---|---|
++| 24-byte header | 8 bytes `KXMBNDL1`, u32 version=1, u32 count, u64 entry |
++| count × 24-byte descriptors | u64 payload length, u64 destination, u64 destination length |
++| payload | segment buffers in descriptor order, with no alignment padding |
++
++Only normal loads are supported, with 1–16 segments. Each buffer is limited to
++256 MiB and total payload to 512 MiB. Destination alignment, overlap, overflow,
++buffer lengths, entry containment, short reads and trailing bytes are checked.
++Zero-byte buffers represent zero-filled destination segments.
++
++## Kernel build and loading gate
++
++```sh
++make -C kernel KDIR=/path/to/matching/kernel PARAM_LOADER=1
++```
++
++This builds both `kexec_mod_arm64.ko` and `kexec_mod.ko`. It does **not** repair
++their generated `__this_module` descriptors, the RANDSTRUCT vermagic hash, symbol
++CRCs or any remaining vendor ABI differences. Do not load an arbitrary rebuild
++just by copying the stock vermagic string or CRCs into it.
++
++The narrowly scoped `tools/prepare_hello_probe.py` helper accepts these two
++modules only with `--kexec-experiment`. It checks every imported CRC against the
++recovered kernel exports and, for the core, the arch module's `Module.symvers`.
++It rejects unexpected frontends, rebuilds the descriptor, and copies the stock
++vermagic. It never changes imported CRCs or executable code. This demonstrated
++method is not a general compatibility guarantee for other kernel modules.
++
++After preparing and reviewing the descriptor, the frontend parameters are
++`bundle=/absolute/path` and `execute=0` (default). Staging allocates and copies
++pages; it does not deliberately jump to another kernel. Unloading frees the
++staged image. `execute=1` arms a worker during module initialization. Once
++`insmod` returns, writing `1` to `/sys/module/kexec_mod/parameters/trigger`
++starts `kernel_kexec()` from that worker. The read-only `execution_status`
++parameter reports 0 while waiting, 1 after the trigger, 2 before entering
++`kernel_kexec()`, or a negative error if it returns. A jump still requires a
++separately planned shutdown/recovery procedure.
++
++The stock ELF relocations reveal `module.init=728`, `module.exit=464` and
++`module.name=640` in a 768-byte object. These are useful evidence for a minimal
++ABI probe; they do not establish the full randomized layout. The Wi-Fi module's
++DWARF contradicts those values and must not be used as a final layout header.
+diff -urN a/kernel/Kbuild b/kernel/Kbuild
+--- a/kernel/Kbuild	2026-10-21 20:06:06.300790900 +0100
++++ b/kernel/Kbuild	2026-10-21 20:06:06.369965900 +0100
+@@ -10,6 +10,12 @@
+ 
+ obj-m := kexec_mod.o
+ obj-m += arch/$(ARCH)/
++ifeq ($(PARAM_LOADER),1)
++kexec_mod-y := kexec_param.o kexec_compat.o kexec_core.o
++ccflags-y += -DKEXEC_MOD_PARAM_LOADER -fno-stack-protector
++else
+ kexec_mod-y := kexec_drv.o kexec_compat.o kexec.o kexec_core.o
++endif
++kexec_mod-y += percept_caam.o
+ 
+-ccflags-y := -I$(src)/ -fno-unwind-tables -fno-asynchronous-unwind-tables
++ccflags-y += -I$(src)/ -fno-unwind-tables -fno-asynchronous-unwind-tables
+diff -urN a/kernel/arch/arm64/Kbuild b/kernel/arch/arm64/Kbuild
+--- a/kernel/arch/arm64/Kbuild	2026-10-21 20:06:06.267992600 +0100
++++ b/kernel/arch/arm64/Kbuild	2026-10-21 20:06:06.361965600 +0100
+@@ -13,4 +13,8 @@
+ kexec_mod_$(ARCH)-y += idmap.o cpu-reset.o hyp-shim.o
+ kexec_mod_$(ARCH)-y += machine_kexec.o relocate_kernel.o
+ 
+-ccflags-y := -I$(src)/ -fno-unwind-tables -fno-asynchronous-unwind-tables
+\ No newline at end of file
++ccflags-y := -I$(src)/ -fno-unwind-tables -fno-asynchronous-unwind-tables
++ifeq ($(PARAM_LOADER),1)
++# Per-task stack canaries embed a RANDSTRUCT-dependent task_struct offset.
++ccflags-y += -fno-stack-protector
++endif
+diff -urN a/kernel/arch/arm64/cpu-reset.S b/kernel/arch/arm64/cpu-reset.S
+--- a/kernel/arch/arm64/cpu-reset.S	2026-10-21 20:06:06.248480600 +0100
++++ b/kernel/arch/arm64/cpu-reset.S	2026-10-21 20:06:06.350870900 +0100
+@@ -14,6 +14,7 @@
+ #include <asm/assembler.h>
+ #include <asm/sysreg.h>
+ #include <asm/virt.h>
++#include <asm/page.h>
+ 
+ .text
+ 
+@@ -31,11 +32,13 @@
+  * branch to what would be the reset vector. It must be executed with the
+  * flat identity mapping.
+  */
++.balign PAGE_SIZE
+ ENTRY(__cpu_soft_restart)
+ 	/* Clear sctlr_el1 flags. */
+ 	mrs	x12, sctlr_el1
+ 	ldr	x13, =SCTLR_ELx_FLAGS
+ 	bic	x12, x12, x13
++	pre_disable_mmu_workaround
+ 	msr	sctlr_el1, x12
+ 	isb
+ 
+@@ -55,3 +58,8 @@
+ 	mov	x2, x4				// arg2
+ 	br	x8
+ ENDPROC(__cpu_soft_restart)
++.ltorg
++/* Also fails assembly if the routine and literal pool exceed one page. */
++.org __cpu_soft_restart + PAGE_SIZE, 0
++.globl __cpu_soft_restart_end
++__cpu_soft_restart_end:
+diff -urN a/kernel/arch/arm64/idmap.c b/kernel/arch/arm64/idmap.c
+--- a/kernel/arch/arm64/idmap.c	2026-10-21 20:06:06.256996600 +0100
++++ b/kernel/arch/arm64/idmap.c	2026-10-21 20:06:06.353870600 +0100
+@@ -12,87 +12,227 @@
+ #define MODULE_NAME "kexec_mod_arm64"
+ #define pr_fmt(fmt) MODULE_NAME ": " fmt
+ 
++#include <linux/irqflags.h>
+ #include <asm/pgtable.h>
+ #include <asm/mmu_context.h>
++#include <asm/sysreg.h>
+ 
+ #include "idmap.h"
++#include "machine_kexec_compat.h"
+ 
+-#ifdef CONFIG_ARM64_64K_PAGES
+-#define IDMAP_BLOCK_SHIFT	PAGE_SHIFT
+-#define IDMAP_BLOCK_SIZE	PAGE_SIZE
+-#define IDMAP_TABLE_SHIFT	PMD_SHIFT
+-#else
+-#define IDMAP_BLOCK_SHIFT	SECTION_SHIFT
+-#define IDMAP_BLOCK_SIZE	SECTION_SIZE
+-#define IDMAP_TABLE_SHIFT	PUD_SHIFT
+-#endif
+-
+-#define block_index(addr) (((addr) >> IDMAP_BLOCK_SHIFT) & (PTRS_PER_PTE - 1))
+-#define block_align(addr) (((addr) >> IDMAP_BLOCK_SHIFT) << IDMAP_BLOCK_SHIFT)
+-
+-/*
+- * Initial memory map attributes.
+- */
+-#ifndef CONFIG_SMP
+-#define PTE_FLAGS	PTE_TYPE_PAGE | PTE_AF
+-#define PMD_FLAGS	PMD_TYPE_SECT | PMD_SECT_AF
+-#else
+-#define PTE_FLAGS	PTE_TYPE_PAGE | PTE_AF | PTE_SHARED
+-#define PMD_FLAGS	PMD_TYPE_SECT | PMD_SECT_AF | PMD_SECT_S
++/* This experimental path is deliberately limited to the Percept page sizes. */
++#if !defined(CONFIG_ARM64_4K_PAGES) || (CONFIG_PGTABLE_LEVELS != 3 && CONFIG_PGTABLE_LEVELS != 4)
++#error kexec-mod idmap requires 4K pages and three or four translation levels
+ #endif
+ 
+-#ifdef CONFIG_ARM64_64K_PAGES
+-#define MM_MMUFLAGS	PTE_ATTRINDX(MT_NORMAL) | PTE_FLAGS
+-#else
+-#define MM_MMUFLAGS	PMD_ATTRINDX(MT_NORMAL) | PMD_FLAGS
++static pgd_t kexec_idmap_pg_dir[PTRS_PER_PGD] __aligned(PAGE_SIZE);
++#if CONFIG_PGTABLE_LEVELS == 4
++static pud_t kexec_idmap_pud[PTRS_PER_PUD] __aligned(PAGE_SIZE);
+ #endif
+-
+-pgd_t kexec_idmap_pg_dir[PTRS_PER_PGD] __attribute__ ((aligned (4096)));
+-pte_t kexec_idmap_pt[2 * PTRS_PER_PTE] __attribute__ ((aligned (4096)));
++static pmd_t kexec_idmap_pmd[PTRS_PER_PMD] __aligned(PAGE_SIZE);
+ 
+ extern void __cpu_soft_restart(unsigned el2_switch,
+ 	unsigned long entry, unsigned long arg0, unsigned long arg1,
+ 	unsigned long arg2);
++extern const unsigned char __cpu_soft_restart_end[];
+ 
+-void kexec_idmap_setup(void)
++/* Check the module's software walker against the CPU's active translation.
++ * IRQ masking keeps the save/AT/read/restore sequence on one CPU without
++ * introducing an inline access to current->task_struct. Nothing in this
++ * critical section can schedule. PAR_EL1 belongs to that CPU and is restored
++ * before IRQs are restored; TTBRs and TCR are never changed by these probes.
++ */
++static int kexec_check_translation(const char *name, unsigned long va,
++				 phys_addr_t *pa)
+ {
+-	int i;
+-	unsigned long pa, pdx;
+-	pte_t *pmd, *next_pmd = kexec_idmap_pt;
+-	void *ptrs[4] = {kexec_idmap_pg_dir,
+-			 kexec_idmap_pt,
+-			 kexec_idmap_pt + PTRS_PER_PTE,
+-			 __cpu_soft_restart};
++	unsigned long flags;
++	u64 saved_par, par;
++	phys_addr_t hardware, software = kexec_pa_symbol((void *)va);
++
++	raw_local_irq_save(flags);
++	saved_par = read_sysreg(par_el1);
++	asm volatile("at s1e1r, %0" :: "r" (va) : "memory");
++	isb();
++	par = read_sysreg(par_el1);
++	write_sysreg(saved_par, par_el1);
++	isb();
++	raw_local_irq_restore(flags);
++
++	if (par & SYS_PAR_EL1_F) {
++		pr_err("idmap check: %s VA=%lx AT fault PAR=%016llx.\n",
++			name, va, par);
++		return -EFAULT;
++	}
++	hardware = (par & PHYS_MASK & PAGE_MASK) | (va & ~PAGE_MASK);
++	if (!software || software != hardware) {
++		pr_err("idmap check: %s VA=%lx walker=%pa hardware=%pa.\n",
++			name, va, &software, &hardware);
++		return -EFAULT;
++	}
++	*pa = hardware;
++	return 0;
++}
+ 
+-	/* Clear the idmap page table */
+-	memset(kexec_idmap_pg_dir, 0, sizeof(kexec_idmap_pg_dir));
+-	memset(kexec_idmap_pt, 0, sizeof(kexec_idmap_pt));
++static int kexec_check_page(const char *name, void *ptr, phys_addr_t *pa)
++{
++	unsigned long va = (unsigned long)ptr;
++	phys_addr_t last;
++	int ret;
++
++	if (va & ~PAGE_MASK) {
++		pr_err("idmap check: %s VA=%lx is not page aligned.\n", name, va);
++		return -EINVAL;
++	}
++	ret = kexec_check_translation(name, va, pa);
++	if (ret)
++		return ret;
++	ret = kexec_check_translation(name, va + PAGE_SIZE - 1, &last);
++	if (ret)
++		return ret;
++	/* The object fits exactly one aligned translation page, so matching
++	 * endpoints establish physical continuity for every byte, including the
++	 * reset routine's literal pool and page-table descriptors.
++	 */
++	if ((*pa & ~PAGE_MASK) || last != *pa + PAGE_SIZE - 1) {
++		pr_err("idmap check: %s PA=%pa last=%pa is not one physical page.\n",
++			name, pa, &last);
++		return -EFAULT;
++	}
++	pr_info("idmap check: %s VA=%lx PA=%pa bytes=%lu.\n",
++		name, va, pa, PAGE_SIZE);
++	return 0;
++}
+ 
+-	for (i = 0; i < sizeof(ptrs) / sizeof(ptrs[0]); i++) {
+-		pa = kexec_pa_symbol(ptrs[i]);
+-		pdx = pgd_index(pa);
+-
+-		if (pgd_val(kexec_idmap_pg_dir[pdx])) {
+-			pmd = (void *) phys_to_virt(pgd_val(kexec_idmap_pg_dir[pdx]) & ~0xFFF);
+-		} else {
+-			pr_info("Created new idmap page table for 0x%lx\n", pa);
+-
+-			pmd = next_pmd;
+-			next_pmd += PTRS_PER_PTE;
+-			kexec_idmap_pg_dir[pdx] = __pgd(kexec_pa_symbol(pmd) | PMD_TYPE_TABLE);
++static int kexec_idmap_validate(void)
++{
++	phys_addr_t reset, pgd_pa, pmd_pa;
++#if CONFIG_PGTABLE_LEVELS == 4
++	phys_addr_t pud_pa;
++#endif
++	u64 tcr = read_sysreg(tcr_el1);
++	u64 mair = read_sysreg(mair_el1);
++	u64 sctlr = read_sysreg(sctlr_el1);
++	u64 pgd_desc, pmd_desc, expected_pgd, expected_pmd;
++	unsigned long i, reset_bytes = (unsigned long)__cpu_soft_restart_end -
++		(unsigned long)__cpu_soft_restart;
++	int ret;
++
++	BUILD_BUG_ON(sizeof(kexec_idmap_pg_dir) != PAGE_SIZE);
++	BUILD_BUG_ON(sizeof(kexec_idmap_pmd) != PAGE_SIZE);
++#if CONFIG_PGTABLE_LEVELS == 4
++	BUILD_BUG_ON(sizeof(kexec_idmap_pud) != PAGE_SIZE);
++#endif
++	pr_info("idmap check: TCR=%016llx MAIR=%016llx SCTLR=%016llx idmap_t0sz=%llu.\n",
++		tcr, mair, sctlr, idmap_t0sz);
++	if (reset_bytes != PAGE_SIZE || idmap_t0sz != TCR_T0SZ(VA_BITS) ||
++	    (tcr & TCR_TG0_MASK) != TCR_TG0_4K ||
++	    (tcr & TCR_TG1_MASK) != TCR_TG1_4K ||
++	    (tcr & TCR_EPD0_MASK) || ((mair >> (MT_NORMAL * 8)) & 0xff) != 0xff) {
++		pr_err("idmap check: unsupported reset size, TCR or normal-memory MAIR attribute.\n");
++		return -EINVAL;
++	}
++	ret = kexec_check_page("reset", (void *)__cpu_soft_restart, &reset);
++	if (ret)
++		return ret;
++	ret = kexec_check_page("pgd", kexec_idmap_pg_dir, &pgd_pa);
++	if (ret)
++		return ret;
++	ret = kexec_check_page("pmd", kexec_idmap_pmd, &pmd_pa);
++	if (ret)
++		return ret;
++#if CONFIG_PGTABLE_LEVELS == 4
++	ret = kexec_check_page("pud", kexec_idmap_pud, &pud_pa);
++	if (ret)
++		return ret;
++	expected_pgd = pud_pa | PUD_TYPE_TABLE;
++	for (i = 0; i < PTRS_PER_PUD; i++) {
++		u64 value = pud_val(READ_ONCE(kexec_idmap_pud[i]));
++		u64 expected = i == pud_index(reset) ? pmd_pa | PMD_TYPE_TABLE : 0;
++		if (value != expected) {
++			pr_err("idmap check: PUD[%lu]=%016llx expected=%016llx.\n",
++				i, value, expected);
++			return -EINVAL;
+ 		}
+-
+-		pmd[block_index(pa)] = __pte(block_align(pa) | MM_MMUFLAGS);
+ 	}
++#else
++	expected_pgd = pmd_pa | PMD_TYPE_TABLE;
++#endif
++	/* Walk the proposed physical address through the inactive map, rejecting
++	 * unexpected links before following them. Exact descriptors also check
++	 * AF, inner-shareable normal memory, privileged executable access, and
++	 * the absence of table-level permission overrides.
++	 */
++	pgd_desc = pgd_val(READ_ONCE(kexec_idmap_pg_dir[pgd_index(reset)]));
++	pmd_desc = pmd_val(READ_ONCE(kexec_idmap_pmd[pmd_index(reset)]));
++	expected_pmd = (reset & PMD_MASK) | PMD_TYPE_SECT | PMD_SECT_AF |
++		PMD_SECT_S | PMD_ATTRINDX(MT_NORMAL);
++	if (pgd_desc != expected_pgd || pmd_desc != expected_pmd ||
++	    ((pmd_desc & PMD_MASK & PHYS_MASK) | (reset & ~PMD_MASK)) != reset ||
++	    (reset >> (64 - idmap_t0sz))) {
++		pr_err("idmap check: PGD=%016llx PMD=%016llx cannot identity-map reset.\n",
++			pgd_desc, pmd_desc);
++		return -EINVAL;
++	}
++	for (i = 0; i < PTRS_PER_PGD; i++)
++		if (pgd_val(READ_ONCE(kexec_idmap_pg_dir[i])) !=
++		    (i == pgd_index(reset) ? expected_pgd : 0)) {
++			pr_err("idmap check: unexpected PGD entry at %lu.\n", i);
++			return -EINVAL;
++		}
++	for (i = 0; i < PTRS_PER_PMD; i++)
++		if (pmd_val(READ_ONCE(kexec_idmap_pmd[i])) !=
++		    (i == pmd_index(reset) ? expected_pmd : 0)) {
++			pr_err("idmap check: unexpected PMD entry at %lu.\n", i);
++			return -EINVAL;
++		}
++	pr_info("idmap check: PASS PGD=%016llx PMD=%016llx; inactive map only, TTBR0 unchanged.\n",
++		pgd_desc, pmd_desc);
++	return 0;
++}
++
++int kexec_idmap_setup(void)
++{
++	unsigned long pa = kexec_pa_symbol(__cpu_soft_restart);
++	unsigned long pmd_pa = kexec_pa_symbol(kexec_idmap_pmd);
++#if CONFIG_PGTABLE_LEVELS == 4
++	unsigned long pud_pa = kexec_pa_symbol(kexec_idmap_pud);
++	if (!pud_pa)
++		return -EFAULT;
++#endif
++	if (!pa || !pmd_pa || !kexec_pa_symbol(kexec_idmap_pg_dir))
++		return -EFAULT;
++
++	/* cpu-reset.S keeps the complete MMU-off routine in one page. Only
++	 * that code needs an identity translation; hardware reads translation
++	 * tables using their physical addresses. A PMD block covers the page.
++	 */
++	memset(kexec_idmap_pg_dir, 0, sizeof(kexec_idmap_pg_dir));
++	memset(kexec_idmap_pmd, 0, sizeof(kexec_idmap_pmd));
++#if CONFIG_PGTABLE_LEVELS == 4
++	memset(kexec_idmap_pud, 0, sizeof(kexec_idmap_pud));
++	kexec_idmap_pg_dir[pgd_index(pa)] =
++		__pgd(pud_pa | PUD_TYPE_TABLE);
++	kexec_idmap_pud[pud_index(pa)] =
++		__pud(pmd_pa | PMD_TYPE_TABLE);
++	__flush_dcache_area(kexec_idmap_pud, sizeof(kexec_idmap_pud));
++#else
++	kexec_idmap_pg_dir[pgd_index(pa)] =
++		__pgd(pmd_pa | PMD_TYPE_TABLE);
++#endif
++	kexec_idmap_pmd[pmd_index(pa)] = __pmd((pa & PMD_MASK) |
++		PMD_TYPE_SECT | PMD_SECT_AF | PMD_SECT_S | PTE_ATTRINDX(MT_NORMAL));
++	__flush_dcache_area(kexec_idmap_pmd, sizeof(kexec_idmap_pmd));
++	__flush_dcache_area(kexec_idmap_pg_dir, sizeof(kexec_idmap_pg_dir));
++	return kexec_idmap_validate();
+ }
+ 
+ void kexec_idmap_install(void)
+ {
+ 	cpu_set_reserved_ttbr0();
+-	flush_tlb_all();
++	local_flush_tlb_all();
+ 	cpu_set_idmap_tcr_t0sz();
+ 
+-	cpu_do_switch_mm(kexec_pa_symbol(kexec_idmap_pg_dir), &init_mm);
++	kexec_switch_mm(kexec_pa_symbol(kexec_idmap_pg_dir));
+ }
+ 
+ /**
+@@ -110,20 +250,29 @@
+ 	pte_t *ptep, pte;
+ 	struct page *page = NULL;
+ 
+-	pgd = pgd_offset_k(va);
++	/* pgd_offset_k() would dereference the randomized init_mm.pgd. */
++	pgd = kexec_kernel_pg_dir + pgd_index(va);
+ 	if (pgd_none(*pgd) || pgd_bad(*pgd)) {
+ 		return 0;
+ 	}
+ 
+ 	pud = pud_offset(pgd , va);
+-	if (pud_none(*pud) || pud_bad(*pud)) {
++	if (pud_none(*pud)) {
+ 		return 0;
+ 	}
++	if (pud_sect(*pud))
++		return (pud_val(*pud) & PUD_MASK & PHYS_MASK) | (va & ~PUD_MASK);
++	if (pud_bad(*pud))
++		return 0;
+ 
+ 	pmd = pmd_offset(pud, va);
+-	if (pmd_none(*pmd) || pmd_bad(*pmd)) {
++	if (pmd_none(*pmd)) {
+ 		return 0;
+ 	}
++	if (pmd_sect(*pmd))
++		return (pmd_val(*pmd) & PMD_MASK & PHYS_MASK) | (va & ~PMD_MASK);
++	if (pmd_bad(*pmd))
++		return 0;
+ 
+ 	ptep = pte_offset_map(pmd, va);
+ 	if (!ptep) {
+@@ -132,6 +281,8 @@
+ 
+ 	pte = *ptep;
+ 	pte_unmap(ptep);
++	if (!pte_present(pte))
++		return 0;
+ 	page = pte_page(pte);
+ 	page_offset = va & ~PAGE_MASK;
+ 	return page_to_phys(page) | page_offset;
+diff -urN a/kernel/arch/arm64/idmap.h b/kernel/arch/arm64/idmap.h
+--- a/kernel/arch/arm64/idmap.h	2026-10-21 20:06:06.262992900 +0100
++++ b/kernel/arch/arm64/idmap.h	2026-10-21 20:06:06.360872400 +0100
+@@ -14,7 +14,7 @@
+ 
+ phys_addr_t kexec_pa_symbol(void *ptr);
+ 
+-void kexec_idmap_setup(void);
++int kexec_idmap_setup(void);
+ 
+ void kexec_idmap_install(void);
+ 
+diff -urN a/kernel/arch/arm64/machine_kexec.c b/kernel/arch/arm64/machine_kexec.c
+--- a/kernel/arch/arm64/machine_kexec.c	2026-10-21 20:06:06.275996000 +0100
++++ b/kernel/arch/arm64/machine_kexec.c	2026-10-21 20:06:06.362969500 +0100
+@@ -190,7 +190,7 @@
+ 	* the offline CPUs. Therefore, we must use the __* variant here.
+ 	*/
+        __flush_icache_range((uintptr_t)reboot_code_buffer,
+-			    arm64_relocate_new_kernel_size);
++			    (uintptr_t)reboot_code_buffer + arm64_relocate_new_kernel_size);
+ 
+        /* Flush the kimage list and its buffers. */
+        kexec_list_flush(kimage);
+diff -urN a/kernel/arch/arm64/machine_kexec_compat.c b/kernel/arch/arm64/machine_kexec_compat.c
+--- a/kernel/arch/arm64/machine_kexec_compat.c	2026-10-21 20:06:06.281999800 +0100
++++ b/kernel/arch/arm64/machine_kexec_compat.c	2026-10-21 20:06:06.364965200 +0100
+@@ -19,16 +19,23 @@
+ #include <linux/slab.h>
+ #include <asm/uaccess.h>
+ #include <asm/virt.h>
++#include <asm/pgtable.h>
++
++#include "machine_kexec_compat.h"
+ 
+ /* These kernel symbols need to be dynamically resolved at runtime
+  * using kallsym due to them not being exposed to kernel modules */
+ static void (*cpu_do_switch_mm_ptr)(unsigned long, struct mm_struct *);
+ static void (*__flush_dcache_area_ptr)(void *, size_t);
+ static void (*__hyp_set_vectors_ptr)(phys_addr_t);
++static bool (*cpus_are_stuck_in_kernel_ptr)(void);
++static struct mm_struct *kernel_init_mm;
++pgd_t *kexec_kernel_pg_dir;
+ 
+-void cpu_do_switch_mm(unsigned long pgd_phys, struct mm_struct *mm)
++void kexec_switch_mm(unsigned long pgd_phys)
+ {
+-	cpu_do_switch_mm_ptr(pgd_phys, mm);
++	/* Only the running kernel dereferences its randomized mm_struct. */
++	cpu_do_switch_mm_ptr(pgd_phys, kernel_init_mm);
+ }
+ 
+ void __flush_dcache_area(void *addr, size_t len)
+@@ -45,11 +52,9 @@
+ {}
+ 
+ 
+-/* These kernel symbols are stubbed since they are not available
+- * in the host kernel */
+ bool cpus_are_stuck_in_kernel(void)
+ {
+-	return false;
++	return cpus_are_stuck_in_kernel_ptr();
+ }
+ 
+ /* These symbols need to be resolved using by extracting their
+@@ -63,21 +68,9 @@
+  */
+ static int __init_cpu_boot_mode(void)
+ {
+-	extern phys_addr_t kexec_pa_symbol(void *ptr);
+-	/*
+-	 * Hack to obtain pointer to __boot_mode_cpu
+-	 * Our approach is to decode the address to __boot_mode_cpu from the instructions
+-	 * of set_cpu_boot_mode_flag which is exported and references __boot_mode_cpu.
+-	 */
+-	u32 *set_cpu_boot_mode_flag_ptr = (void *)kallsyms_lookup_name("set_cpu_boot_mode_flag");
+-	void *page = (void *) (((u64)set_cpu_boot_mode_flag_ptr) & ~0xFFF);
+-	u16 lo = (set_cpu_boot_mode_flag_ptr[0] >> 29) & 0x3;
+-	u16 hi = (set_cpu_boot_mode_flag_ptr[0] >> 4) & 0xFFFF;
+-	u16 off = (set_cpu_boot_mode_flag_ptr[1] >> 10) & 0xFFF;
+-	u32 *__boot_cpu_mode_ptr = page + ((hi << 13) | (lo << 12)) + off;
++	u32 *__boot_cpu_mode_ptr = (void *)kallsyms_lookup_name("__boot_cpu_mode");
+ 
+-	/* Verify whether address actually exists */
+-	if (kexec_pa_symbol(__boot_cpu_mode_ptr)) {
++	if (__boot_cpu_mode_ptr) {
+ 		__boot_cpu_mode[0] = __boot_cpu_mode_ptr[0];
+ 		__boot_cpu_mode[1] = __boot_cpu_mode_ptr[1];
+ 
+@@ -85,7 +78,7 @@
+ 		return 0;
+ 	}
+ 
+-	return -1;
++	return -ENOENT;
+ }
+ 
+ static void *__hyp_shim;
+@@ -120,21 +113,6 @@
+ }
+ 
+ 
+-struct mm_struct init_mm;
+-
+-static void __init_mm(void)
+-{
+-	/*
+-	 * Hack to obtain pointer to swapper_pg_dir (since it is not exported).
+-	 * However, we can find its physical address in the TTBR1_EL1 register
+-	 * and convert it to a logical address.
+-	 */
+-	u32 val;
+-	asm volatile("mrs %0, ttbr1_el1" : "=r" (val));
+-	init_mm.pgd = phys_to_virt(val);
+-}
+-
+-
+ static void *ksym(const char *name)
+ {
+ 	return (void *) kallsyms_lookup_name(name);
+@@ -142,13 +120,18 @@
+ 
+ int machine_kexec_compat_load(int detect_el2, int shim_hyp)
+ {
++	/* The upstream shim's HVC dispatch and cache handling are not validated. */
++	if (shim_hyp) {
++		pr_err("The experimental Percept port does not support shim_hyp=1.\n");
++		return -EOPNOTSUPP;
++	}
+ 	if (!(cpu_do_switch_mm_ptr = ksym("cpu_do_switch_mm"))
+-	    || !(__flush_dcache_area_ptr = ksym("__flush_dcache_area")))
++	    || !(__flush_dcache_area_ptr = ksym("__flush_dcache_area"))
++	    || !(cpus_are_stuck_in_kernel_ptr = ksym("cpus_are_stuck_in_kernel"))
++	    || !(kernel_init_mm = ksym("init_mm"))
++	    || !(kexec_kernel_pg_dir = ksym("swapper_pg_dir")))
+ 		return -ENOENT;
+ 
+-	/* Find __init_mm */
+-	__init_mm();
+-
+ 	/* Find boot CPU mode */
+ 	__boot_cpu_mode[0] = BOOT_CPU_MODE_EL1;
+ 	__boot_cpu_mode[1] = BOOT_CPU_MODE_EL1;
+@@ -156,7 +139,8 @@
+ 	if (!detect_el2) {
+ 		pr_info("EL2 kexec not supported.\n");
+ 	} else if (__init_cpu_boot_mode() < 0) {
+-		pr_warn("Failed to detect boot CPU mode.\n");
++		pr_err("Failed to resolve boot CPU mode.\n");
++		return -ENOENT;
+ 	}
+ 
+ 	/* Enable shimming the hypervisor vectors */
+@@ -190,5 +174,6 @@
+ 
+ void machine_kexec_compat_prereset(void)
+ {
+-	__hyp_set_vectors(virt_to_phys(__hyp_shim));
++	if (__hyp_shim)
++		__hyp_set_vectors(virt_to_phys(__hyp_shim));
+ }
+diff -urN a/kernel/arch/arm64/machine_kexec_compat.h b/kernel/arch/arm64/machine_kexec_compat.h
+--- a/kernel/arch/arm64/machine_kexec_compat.h	2026-10-21 20:06:06.287503700 +0100
++++ b/kernel/arch/arm64/machine_kexec_compat.h	2026-10-21 20:06:06.365968300 +0100
+@@ -13,6 +13,11 @@
+ #ifndef LINUX_MACHINE_KEXEC_COMPAT_H
+ #define LINUX_MACHINE_KEXEC_COMPAT_H
+ 
++#include <asm/pgtable-types.h>
++
++extern pgd_t *kexec_kernel_pg_dir;
++void kexec_switch_mm(unsigned long pgd_phys);
++
+ /**
+  * Load the kexec compatibility layer.
+  *
+diff -urN a/kernel/arch/arm64/machine_kexec_drv.c b/kernel/arch/arm64/machine_kexec_drv.c
+--- a/kernel/arch/arm64/machine_kexec_drv.c	2026-10-21 20:06:06.293717300 +0100
++++ b/kernel/arch/arm64/machine_kexec_drv.c	2026-10-21 20:06:06.366965500 +0100
+@@ -44,7 +44,11 @@
+ 	}
+ 
+ 	/* Build identity map for MMU */
+-	kexec_idmap_setup();
++	err = kexec_idmap_setup();
++	if (err) {
++		machine_kexec_compat_unload();
++		return err;
++	}
+ 
+ 	return 0;
+ }
+diff -urN a/kernel/kexec_compat.c b/kernel/kexec_compat.c
+--- a/kernel/kexec_compat.c	2026-10-21 20:06:06.309138300 +0100
++++ b/kernel/kexec_compat.c	2026-10-21 20:06:06.374967100 +0100
+@@ -21,6 +21,7 @@
+ #include <asm/virt.h>
+ 
+ #include "kexec_compat.h"
++#include "percept_caam.h"
+ 
+ /* These kernel symbols need to be dynamically resolved at runtime
+  * using kallsym due to them not being exposed to kernel modules */
+@@ -61,8 +62,10 @@
+ 	    || !(kernel_restart_prepare_ptr = ksym("kernel_restart_prepare"))
+ 	    || !(cpu_hotplug_enable_ptr = ksym("cpu_hotplug_enable")))
+ 		return -ENOENT;
+-	return 0;
++	return percept_caam_prepare();
+ }
+ 
+ void kexec_compat_unload(void)
+-{}
++{
++	percept_caam_release();
++}
+diff -urN a/kernel/kexec_core.c b/kernel/kexec_core.c
+--- a/kernel/kexec_core.c	2026-10-21 20:06:06.316139700 +0100
++++ b/kernel/kexec_core.c	2026-10-21 20:06:06.377965900 +0100
+@@ -38,6 +38,7 @@
+ #include <linux/compiler.h>
+ #include <linux/hugetlb.h>
+ #include <linux/frame.h>
++#include <linux/version.h>
+ 
+ #include <asm/page.h>
+ #include <asm/sections.h>
+@@ -47,6 +48,7 @@
+ 
+ #include "kexec.h"
+ #include "kexec_internal.h"
++#include "percept_caam.h"
+ 
+ DEFINE_MUTEX(kexec_mutex);
+ 
+@@ -99,6 +101,11 @@
+  */
+ #define KIMAGE_NO_DEST (-1UL)
+ #define PAGE_COUNT(x) (((x) + PAGE_SIZE - 1) >> PAGE_SHIFT)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
++#define KEXEC_TOTALRAM_PAGES totalram_pages()
++#else
++#define KEXEC_TOTALRAM_PAGES totalram_pages
++#endif
+ 
+ static struct page *kimage_alloc_page(struct kimage *image,
+ 				     gfp_t gfp_mask,
+@@ -174,13 +181,13 @@
+ 	* wasted allocating pages, which can cause a soft lockup.
+ 	*/
+        for (i = 0; i < nr_segments; i++) {
+-	       if (PAGE_COUNT(image->segment[i].memsz) > totalram_pages / 2)
++	       if (PAGE_COUNT(image->segment[i].memsz) > KEXEC_TOTALRAM_PAGES / 2)
+ 		       return -EINVAL;
+ 
+ 	       total_pages += PAGE_COUNT(image->segment[i].memsz);
+        }
+ 
+-       if (total_pages > totalram_pages / 2)
++       if (total_pages > KEXEC_TOTALRAM_PAGES / 2)
+ 	       return -EINVAL;
+ 
+        return 0;
+@@ -558,7 +565,16 @@
+ 
+ 		       old_addr = *old & PAGE_MASK;
+ 		       old_page = boot_pfn_to_page(old_addr >> PAGE_SHIFT);
++#ifdef KEXEC_MOD_PARAM_LOADER
++		       /* ARM64 has no HIGHMEM. copy_highpage() uses kmap_atomic(),
++			* whose pagefault_disable() inline writes a randomized field
++			* in current->task_struct. These direct-map addresses need no
++			* temporary mapping or task-field access.
++			*/
++		       copy_page(page_address(page), page_address(old_page));
++#else
+ 		       copy_highpage(page, old_page);
++#endif
+ 		       *old = addr | (*old & ~PAGE_MASK);
+ 
+ 		       /* The old page I have found cannot be a
+@@ -627,10 +643,15 @@
+ 	       uchunk = min(ubytes, mchunk);
+ 
+ 	       /* For file based kexec, source pages are in kernel memory */
++#ifdef KEXEC_MOD_PARAM_LOADER
++	       if (uchunk)
++		       memcpy(ptr, kbuf, uchunk);
++#else
+ 	       if (image->file_mode)
+ 		       memcpy(ptr, kbuf, uchunk);
+ 	       else
+ 		       result = copy_from_user(ptr, buf, uchunk);
++#endif
+ 	       kunmap(page);
+ 	       if (result) {
+ 		       result = -EFAULT;
+@@ -638,9 +659,10 @@
+ 	       }
+ 	       ubytes -= uchunk;
+ 	       maddr  += mchunk;
+-	       if (image->file_mode)
+-		       kbuf += mchunk;
+-	       else
++	       if (image->file_mode) {
++		       if (uchunk)
++			       kbuf += uchunk;
++	       } else
+ 		       buf += mchunk;
+ 	       mbytes -= mchunk;
+ 
+@@ -660,6 +682,7 @@
+ int kernel_kexec(void)
+ {
+        int error = 0;
++       unsigned long irq_flags;
+ 
+        if (!mutex_trylock(&kexec_mutex))
+ 	       return -EBUSY;
+@@ -669,6 +692,9 @@
+        }
+ 
+        {
++	       error = percept_caam_stop_rng();
++	       if (error)
++		       goto Unlock;
+ 	       kexec_in_progress = true;
+ 	       kernel_restart_prepare(NULL);
+ 	       migrate_to_reboot_cpu();
+@@ -680,11 +706,23 @@
+ 		* CPU hotplug again; so re-enable it here.
+ 		*/
+ 	       cpu_hotplug_enable();
+-	       pr_emerg("Starting new kernel\n");
+ 	       machine_shutdown();
+        }
+ 
++       /* No old IRQ handler, tasklet or worker may touch a reset ring. */
++       preempt_disable();
++       local_irq_save(irq_flags);
++       error = percept_caam_quiesce();
++       if (error) {
++	       pr_emerg("CAAM cleanup failed (%d); aborting jump and restarting firmware\n", error);
++	       emergency_restart();
++	       for (;;)
++		       cpu_relax();
++       }
++       pr_emerg("Starting new kernel\n");
+        machine_kexec(kexec_image);
++       local_irq_restore(irq_flags);
++       preempt_enable();
+ Unlock:
+        mutex_unlock(&kexec_mutex);
+        return error;
+diff -urN a/kernel/kexec_param.c b/kernel/kexec_param.c
+--- a/kernel/kexec_param.c	1970-01-01 00:00:00.000000000 +0000
++++ b/kernel/kexec_param.c	2026-10-21 20:06:06.386968800 +0100
+@@ -0,0 +1,364 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Experimental kernel-buffer frontend. Bundle format is documented in PERCEPT.md. */
++#define pr_fmt(fmt) "kexec_mod: " fmt
++
++#include <linux/module.h>
++#include <linux/capability.h>
++#include <linux/delay.h>
++#include <linux/fs.h>
++#include <linux/mm.h>
++#include <linux/mutex.h>
++#include <linux/security.h>
++#include <linux/sizes.h>
++#include <linux/slab.h>
++#include <linux/vmalloc.h>
++#include <linux/workqueue.h>
++
++#include "kexec.h"
++#include "kexec_internal.h"
++#include "kexec_compat.h"
++
++MODULE_LICENSE("GPL v2");
++MODULE_DESCRIPTION("Experimental kexec module with a prepared-segment bundle loader");
++
++static char *bundle;
++module_param(bundle, charp, 0);
++MODULE_PARM_DESC(bundle, "Absolute path to a KXMBNDL1 prepared-segment bundle");
++static bool execute;
++module_param(execute, bool, 0);
++MODULE_PARM_DESC(execute, "Arm post-init execution; default false only stages the image");
++static bool trigger;
++module_param(trigger, bool, 0600);
++MODULE_PARM_DESC(trigger, "Start the armed kexec after module initialization finishes");
++static int execution_status;
++module_param(execution_status, int, 0400);
++MODULE_PARM_DESC(execution_status, "0 waiting, 1 triggered, 2 entering kexec, negative errno on return");
++
++struct bundle_header {
++	u8 magic[8];
++	__le32 version;
++	__le32 nr_segments;
++	__le64 entry;
++} __packed;
++
++struct bundle_segment {
++	__le64 bufsz;
++	__le64 mem;
++	__le64 memsz;
++} __packed;
++
++static int read_exact(struct file *file, void *buf, size_t size, loff_t *pos)
++{
++	while (size) {
++		ssize_t n = kernel_read(file, buf, min_t(size_t, size, SZ_1M), pos);
++		if (n <= 0)
++			return n < 0 ? n : -ENOEXEC;
++		buf = (u8 *)buf + n;
++		size -= n;
++	}
++	return 0;
++}
++
++/* Non-executing diagnostic: inspect source pages, never destination memory. */
++static int verify_staged_bundle(struct kimage *image, struct file *file)
++{
++	unsigned long bases[KEXEC_SEGMENT_MAX], pages = 0, covered = 0;
++	unsigned long *sources = NULL, destination = 0, steps, limit;
++	kimage_entry_t *cursor = &image->head, *end = cursor + 1;
++	unsigned char *expected = NULL;
++	loff_t pos = sizeof(struct bundle_header) +
++		image->nr_segments * sizeof(struct bundle_segment);
++	unsigned int i;
++	bool have_destination = false;
++	int ret = -EINVAL;
++
++	for (i = 0; i < image->nr_segments; i++) {
++		unsigned long count = image->segment[i].memsz >> PAGE_SHIFT;
++
++		bases[i] = pages;
++		/* Bound both diagnostics memory and malformed-list traversal. */
++		if (!count || count > (SZ_512M >> PAGE_SHIFT) - pages)
++			return -E2BIG;
++		pages += count;
++	}
++	sources = vzalloc(pages * sizeof(*sources));
++	expected = kmalloc(PAGE_SIZE, GFP_KERNEL);
++	if (!sources || !expected) {
++		ret = -ENOMEM;
++		goto out;
++	}
++	limit = 3 * pages + 32;
++	for (steps = 0; steps < limit; steps++) {
++		kimage_entry_t entry;
++		unsigned long flag, pa, index = pages;
++
++		if (cursor >= end)
++			goto out;
++		entry = *cursor;
++		flag = entry & IND_FLAGS;
++		pa = entry & PAGE_MASK;
++		if ((entry & ~PAGE_MASK) != flag)
++			goto out;
++		switch (flag) {
++		case IND_INDIRECTION:
++			if (!pfn_valid(pa >> PAGE_SHIFT))
++				goto out;
++			cursor = phys_to_virt(pa);
++			end = cursor + PAGE_SIZE / sizeof(*cursor);
++			continue;
++		case IND_DESTINATION:
++			destination = pa;
++			have_destination = true;
++			break;
++		case IND_SOURCE:
++			if (!have_destination || !pfn_valid(pa >> PAGE_SHIFT))
++				goto out;
++			for (i = 0; i < image->nr_segments; i++) {
++				struct kexec_segment *s = &image->segment[i];
++
++				if (destination >= s->mem &&
++				    destination - s->mem < s->memsz) {
++					index = bases[i] +
++						((destination - s->mem) >> PAGE_SHIFT);
++					break;
++				}
++			}
++			if (index == pages || sources[index])
++				goto out;
++			sources[index] = pa | IND_SOURCE;
++			covered++;
++			if (destination > ULONG_MAX - PAGE_SIZE)
++				goto out;
++			destination += PAGE_SIZE;
++			break;
++		case IND_DONE:
++			if (entry != IND_DONE || covered != pages)
++				goto out;
++			goto compare;
++		default:
++			goto out;
++		}
++		cursor++;
++	}
++	ret = -ELOOP;
++	goto out;
++
++compare:
++	for (i = 0; i < image->nr_segments; i++) {
++		struct kexec_segment *s = &image->segment[i];
++		unsigned long page, count = s->memsz >> PAGE_SHIFT;
++		size_t remaining = s->bufsz;
++
++		for (page = 0; page < count; page++) {
++			size_t bytes = min_t(size_t, remaining, PAGE_SIZE);
++			unsigned long source = sources[bases[i] + page] & PAGE_MASK;
++
++			memset(expected, 0, PAGE_SIZE);
++			ret = read_exact(file, expected, bytes, &pos);
++			if (ret)
++				goto out;
++			if (memcmp(phys_to_virt(source), expected, PAGE_SIZE)) {
++				pr_err("Staged segment %u page %lu differs from bundle/zero tail.\n",
++				       i, page);
++				ret = -EBADMSG;
++				goto out;
++			}
++			remaining -= bytes;
++			if (!(page & 127))
++				cond_resched();
++		}
++		pr_info("Verified staged segment %u: dest=%#lx bytes=%zu pages=%lu, including zero tail.\n",
++			i, s->mem, s->bufsz, count);
++	}
++	pr_info("Verified relocation list: %lu source pages, %lu entries; no destination writes.\n",
++		covered, steps + 1);
++	ret = 0;
++out:
++	if (ret)
++		pr_err("Staged bundle verification failed: %d.\n", ret);
++	kfree(expected);
++	vfree(sources);
++	return ret;
++}
++
++static int load_bundle(void)
++{
++	struct bundle_header header;
++	struct bundle_segment segments[KEXEC_SEGMENT_MAX];
++	struct kimage *image = NULL;
++	struct file *file;
++	loff_t pos = 0;
++	u64 payload = 0, memory = 0;
++	unsigned int count, i;
++	int ret;
++	u8 trailing;
++	bool entry_in_segment = false;
++
++	BUILD_BUG_ON(sizeof(header) != 24);
++	BUILD_BUG_ON(sizeof(segments[0]) != 24);
++	file = filp_open(bundle, O_RDONLY | O_LARGEFILE, 0);
++	if (IS_ERR(file))
++		return PTR_ERR(file);
++	ret = read_exact(file, &header, sizeof(header), &pos);
++	if (ret)
++		goto out;
++	count = le32_to_cpu(header.nr_segments);
++	if (memcmp(header.magic, "KXMBNDL1", 8) ||
++	    le32_to_cpu(header.version) != 1 || !count ||
++	    count > KEXEC_SEGMENT_MAX) {
++		ret = -ENOEXEC;
++		goto out;
++	}
++	ret = read_exact(file, segments, count * sizeof(segments[0]), &pos);
++	if (ret)
++		goto out;
++	image = do_kimage_alloc_init();
++	if (!image) {
++		ret = -ENOMEM;
++		goto out;
++	}
++	image->start = le64_to_cpu(header.entry);
++	image->nr_segments = count;
++	image->file_mode = 1;
++	for (i = 0; i < count; i++) {
++		u64 bufsz = le64_to_cpu(segments[i].bufsz);
++		u64 mem = le64_to_cpu(segments[i].mem);
++		u64 memsz = le64_to_cpu(segments[i].memsz);
++		/* Bound allocation and reject wraparound before native arithmetic. */
++		if (!memsz || bufsz > memsz || bufsz > SZ_256M ||
++		    mem > ULONG_MAX - memsz || memsz > ULONG_MAX ||
++		    payload > SZ_512M - bufsz ||
++		    memsz > SZ_512M || memory > SZ_512M - memsz) {
++			ret = -EINVAL;
++			goto out;
++		}
++		payload += bufsz;
++		memory += memsz;
++		image->segment[i].bufsz = bufsz;
++		image->segment[i].mem = mem;
++		image->segment[i].memsz = memsz;
++		if (image->start >= mem && image->start < mem + memsz)
++			entry_in_segment = true;
++	}
++	if (!entry_in_segment) {
++		ret = -ENOEXEC;
++		goto out;
++	}
++	ret = sanity_check_segment_list(image);
++	if (ret)
++		goto out;
++	image->control_code_page = kimage_alloc_control_pages(image,
++		get_order(KEXEC_CONTROL_PAGE_SIZE));
++	image->swap_page = kimage_alloc_control_pages(image, 0);
++	if (!image->control_code_page || !image->swap_page) {
++		ret = -ENOMEM;
++		goto out;
++	}
++	ret = machine_kexec_prepare(image);
++	if (ret)
++		goto out;
++	for (i = 0; i < count; i++) {
++		struct kexec_segment *segment = &image->segment[i];
++		void *data = NULL;
++		if (segment->bufsz) {
++			data = vmalloc(segment->bufsz);
++			if (!data) {
++				ret = -ENOMEM;
++				goto out;
++			}
++		}
++		ret = read_exact(file, data, segment->bufsz, &pos);
++		if (!ret) {
++			segment->kbuf = data;
++			ret = kimage_load_segment(image, segment);
++			segment->kbuf = NULL;
++		}
++		vfree(data);
++		if (ret)
++			goto out;
++	}
++	ret = kernel_read(file, &trailing, 1, &pos);
++	if (ret) {
++		if (ret > 0)
++			ret = -ENOEXEC;
++		goto out;
++	}
++	kimage_terminate(image);
++	ret = verify_staged_bundle(image, file);
++	if (ret)
++		goto out;
++	kexec_image = image;
++	image = NULL;
++	pr_info("Staged %u prepared segments; execute=%d.\n", count, execute);
++out:
++	kimage_free(image);
++	filp_close(file, NULL);
++	return ret;
++}
++
++static void execute_worker(struct work_struct *unused)
++{
++	int ret, i;
++
++	for (i = 0; i < 300 && !READ_ONCE(trigger); i++)
++		msleep(100);
++	if (!READ_ONCE(trigger)) {
++		WRITE_ONCE(execution_status, -ETIMEDOUT);
++		pr_err("Post-init execution trigger timed out.\n");
++		return;
++	}
++	/* The sysfs trigger is written only after insmod has returned, so the
++	 * module has left MODULE_STATE_COMING. Keep it pinned while executing.
++	 */
++	if (!try_module_get(THIS_MODULE)) {
++		WRITE_ONCE(execution_status, -ENODEV);
++		pr_err("Could not pin module for post-init execution.\n");
++		return;
++	}
++	WRITE_ONCE(execution_status, 1);
++	pr_emerg("Post-init execution triggered.\n");
++	/* Give the shutdown hook time to acknowledge the triggered state. */
++	msleep(1500);
++	WRITE_ONCE(execution_status, 2);
++	pr_emerg("Entering kernel_kexec from worker.\n");
++	ret = kernel_kexec();
++	WRITE_ONCE(execution_status, ret ? ret : -EIO);
++	pr_err("kernel_kexec returned %d.\n", ret);
++	module_put(THIS_MODULE);
++}
++
++static DECLARE_WORK(execute_work, execute_worker);
++
++static int __init kexec_param_init(void)
++{
++	int ret;
++	if (!bundle || bundle[0] != '/')
++		return -EINVAL;
++	if (!capable(CAP_SYS_BOOT) || kexec_load_disabled)
++		return -EPERM;
++	ret = security_kernel_load_data(LOADING_KEXEC_IMAGE);
++	if (ret)
++		return ret;
++	ret = kexec_compat_load();
++	if (ret)
++		return ret;
++	mutex_lock(&kexec_mutex);
++	ret = load_bundle();
++	mutex_unlock(&kexec_mutex);
++	if (!ret && execute && !schedule_work(&execute_work))
++		ret = -EBUSY;
++	if (ret) {
++		kimage_free(xchg(&kexec_image, NULL));
++		kexec_compat_unload();
++	}
++	return ret;
++}
++module_init(kexec_param_init);
++
++static void __exit kexec_param_exit(void)
++{
++	cancel_work_sync(&execute_work);
++	kimage_free(xchg(&kexec_image, NULL));
++	kexec_compat_unload();
++}
++module_exit(kexec_param_exit);
+diff -urN a/kernel/percept_caam.c b/kernel/percept_caam.c
+--- a/kernel/percept_caam.c	1970-01-01 00:00:00.000000000 +0000
++++ b/kernel/percept_caam.c	2026-10-21 20:06:06.394968900 +0100
+@@ -0,0 +1,206 @@
++// SPDX-License-Identifier: GPL-2.0
++/* Percept-only warm-handoff cleanup; no kernel-private structure accesses. */
++#ifndef PERCEPT_CAAM_TEST
++#include <linux/delay.h>
++#include <linux/clk.h>
++#include <linux/errno.h>
++#include <linux/io.h>
++#include <linux/kallsyms.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/sizes.h>
++#include "percept_caam.h"
++
++struct hwrng;
++static struct hwrng *caam_rng;
++static void (*unregister_rng)(struct hwrng *);
++static void __iomem *rings[3];
++static bool little_endian;
++static bool percept_caam_reset;
++static bool percept_ocotp_clock;
++static struct clk *ocotp_clock;
++static bool ocotp_clock_enabled;
++module_param(percept_caam_reset, bool, 0400);
++MODULE_PARM_DESC(percept_caam_reset, "Quiesce Percept CAAM RNG and job rings before the final jump");
++module_param(percept_ocotp_clock, bool, 0400);
++MODULE_PARM_DESC(percept_ocotp_clock, "Keep OCOTP clock enabled across the jump for target SoC identification");
++#endif
++
++/* Offsets/constants from drivers/crypto/caam/regs.h (SEC4 Job Ring). */
++#define CAAM_FIRST_JR       0x30901000
++#define CAAM_JR_STRIDE      0x1000
++#define CAAM_JR_COUNT       3
++#define CAAM_JRINT          0x4c
++#define CAAM_JRCFG_LO       0x54
++#define CAAM_JRCR           0x6c
++#define CAAM_JRCFG_IMSK     0x01
++#define CAAM_JRCR_RESET     0x01
++#define CAAM_HALT_MASK      0x0c
++#define CAAM_HALT_COMPLETE  0x08
++#define CAAM_TIMEOUT_US     100000
++
++static u32 caam_read(void __iomem *addr)
++{
++	return little_endian ? ioread32(addr) : ioread32be(addr);
++}
++
++static void caam_write(void __iomem *addr, u32 value)
++{
++	if (little_endian)
++		iowrite32(value, addr);
++	else
++		iowrite32be(value, addr);
++}
++
++static int caam_wait(void __iomem *addr, u32 mask, u32 expected, u32 *last)
++{
++	unsigned int elapsed;
++
++	for (elapsed = 0; elapsed <= CAAM_TIMEOUT_US; elapsed++) {
++		*last = caam_read(addr);
++		if ((*last & mask) == expected)
++			return 0;
++		if (elapsed != CAAM_TIMEOUT_US)
++			udelay(1);
++	}
++	return -ETIMEDOUT;
++}
++
++/* Called only with local IRQs/preemption disabled and other CPUs offline. */
++int percept_caam_quiesce(void)
++{
++	u32 value;
++	unsigned int i;
++	int ret;
++
++	if (!percept_caam_reset)
++		return 0;
++
++	/* Mask every ring before flushing any of them. */
++	for (i = 0; i < CAAM_JR_COUNT; i++) {
++		value = caam_read(rings[i] + CAAM_JRCFG_LO);
++		caam_write(rings[i] + CAAM_JRCFG_LO, value | CAAM_JRCFG_IMSK);
++		/* Read back the mask to order posted MMIO writes. */
++		value = caam_read(rings[i] + CAAM_JRCFG_LO);
++		if (!(value & CAAM_JRCFG_IMSK))
++			return -EIO;
++	}
++	for (i = 0; i < CAAM_JR_COUNT; i++) {
++		pr_emerg("kexec_mod: CAAM JR%u @ %#x before: cfg=%#x status=%#x command=%#x\n",
++			 i, CAAM_FIRST_JR + i * CAAM_JR_STRIDE,
++			 caam_read(rings[i] + CAAM_JRCFG_LO),
++			 caam_read(rings[i] + CAAM_JRINT),
++			 caam_read(rings[i] + CAAM_JRCR));
++		/* The first reset command requests a flush/halt. */
++		caam_write(rings[i] + CAAM_JRCR, CAAM_JRCR_RESET);
++		ret = caam_wait(rings[i] + CAAM_JRINT, CAAM_HALT_MASK,
++				CAAM_HALT_COMPLETE, &value);
++		if (ret) {
++			pr_emerg("kexec_mod: CAAM JR%u halt timed out: status=%#x\n", i, value);
++			return ret;
++		}
++		/* The second reset command resets the halted ring. */
++		caam_write(rings[i] + CAAM_JRCR, CAAM_JRCR_RESET);
++		ret = caam_wait(rings[i] + CAAM_JRCR, CAAM_JRCR_RESET, 0, &value);
++		if (ret) {
++			pr_emerg("kexec_mod: CAAM JR%u reset timed out: command=%#x\n", i, value);
++			return ret;
++		}
++		/* JRINT is write-one-to-clear. Keep the interrupt masked. */
++		value = caam_read(rings[i] + CAAM_JRINT);
++		caam_write(rings[i] + CAAM_JRINT, value);
++		value = caam_read(rings[i] + CAAM_JRCFG_LO);
++		caam_write(rings[i] + CAAM_JRCFG_LO, value | CAAM_JRCFG_IMSK);
++		pr_emerg("kexec_mod: CAAM JR%u reset complete: cfg=%#x status=%#x command=%#x\n",
++			 i, caam_read(rings[i] + CAAM_JRCFG_LO),
++			 caam_read(rings[i] + CAAM_JRINT),
++			 caam_read(rings[i] + CAAM_JRCR));
++	}
++	return 0;
++}
++
++#ifndef PERCEPT_CAAM_TEST
++int percept_caam_prepare(void)
++{
++	bool *endian;
++	struct device_node *node;
++	unsigned int i;
++
++	if (percept_ocotp_clock && !percept_caam_reset)
++		return -EINVAL;
++	if (!percept_caam_reset)
++		return 0;
++	if (!of_machine_is_compatible("fsl,imx8mq"))
++		return -ENODEV;
++	caam_rng = (void *)kallsyms_lookup_name("caam_rng");
++	unregister_rng = (void *)kallsyms_lookup_name("hwrng_unregister");
++	endian = (void *)kallsyms_lookup_name("caam_little_end");
++	if (!caam_rng || !unregister_rng || !endian)
++		return -ENOENT;
++	if (percept_ocotp_clock) {
++		node = of_find_compatible_node(NULL, NULL, "fsl,imx8mq-ocotp");
++		if (!node)
++			return -ENODEV;
++		ocotp_clock = of_clk_get(node, 0);
++		of_node_put(node);
++		if (IS_ERR(ocotp_clock)) {
++			int ret = PTR_ERR(ocotp_clock);
++			ocotp_clock = NULL;
++			return ret;
++		}
++	}
++	little_endian = READ_ONCE(*endian);
++	for (i = 0; i < CAAM_JR_COUNT; i++) {
++		rings[i] = ioremap(CAAM_FIRST_JR + i * CAAM_JR_STRIDE, SZ_4K);
++		if (!rings[i]) {
++			percept_caam_release();
++			return -ENOMEM;
++		}
++	}
++	pr_info("kexec_mod: Percept CAAM cleanup prepared (%s-endian); no reset during staging\n",
++		little_endian ? "little" : "big");
++	return 0;
++}
++
++void percept_caam_release(void)
++{
++	unsigned int i;
++
++	if (ocotp_clock_enabled)
++		clk_disable_unprepare(ocotp_clock);
++	ocotp_clock_enabled = false;
++	if (ocotp_clock)
++		clk_put(ocotp_clock);
++	ocotp_clock = NULL;
++	for (i = 0; i < CAAM_JR_COUNT; i++) {
++		if (rings[i])
++			iounmap(rings[i]);
++		rings[i] = NULL;
++	}
++}
++
++int percept_caam_stop_rng(void)
++{
++	int ret;
++
++	if (!percept_caam_reset)
++		return 0;
++	if (percept_ocotp_clock) {
++		ret = clk_prepare_enable(ocotp_clock);
++		if (ret) {
++			pr_err("kexec_mod: cannot enable OCOTP clock: %d\n", ret);
++			return ret;
++		}
++		ocotp_clock_enabled = true;
++		pr_emerg("kexec_mod: OCOTP clock pinned for target SoC identification\n");
++	}
++	pr_emerg("kexec_mod: unregistering CAAM hwrng before device/CPU shutdown\n");
++	/* Use the host's opaque hwrng pointer. Its cleanup drains pending jobs
++	 * while IRQs still work. Keep driver allocations alive until the jump;
++	 * calling caam_rng_exit would also free the context behind its back.
++	 */
++	unregister_rng(caam_rng);
++	pr_emerg("kexec_mod: CAAM hwrng unregistered\n");
++	return 0;
++}
++#endif
+diff -urN a/kernel/percept_caam.h b/kernel/percept_caam.h
+--- a/kernel/percept_caam.h	1970-01-01 00:00:00.000000000 +0000
++++ b/kernel/percept_caam.h	2026-10-21 20:06:06.396968700 +0100
+@@ -0,0 +1,10 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef KEXEC_MOD_PERCEPT_CAAM_H
++#define KEXEC_MOD_PERCEPT_CAAM_H
++
++int percept_caam_prepare(void);
++void percept_caam_release(void);
++int percept_caam_stop_rng(void);
++int percept_caam_quiesce(void);
++
++#endif
+diff -urN a/user/Makefile b/user/Makefile
+--- a/user/Makefile	2026-10-21 20:06:06.328850500 +0100
++++ b/user/Makefile	2026-10-21 20:06:06.402482100 +0100
+@@ -2,10 +2,10 @@
+ 
+ .PHONY: all clean
+ 
+-all: redir.so
++all: redir.so capture.so
+ 
+ %.so: %.c
+ 	$(CC) $(CFLAGS) -shared -fpic -o $@ $<
+ 
+ clean:
+-	rm -f redir.so
++	rm -f redir.so capture.so
+diff -urN a/user/capture.c b/user/capture.c
+--- a/user/capture.c	1970-01-01 00:00:00.000000000 +0000
++++ b/user/capture.c	2026-10-21 20:06:06.401483200 +0100
+@@ -0,0 +1,118 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/* Capture kexec-tools' legacy kexec_load request; never load or execute it. */
++#define _DEFAULT_SOURCE
++#include <endian.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <stdarg.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++
++struct segment {
++	const void *buf;
++	size_t bufsz;
++	unsigned long mem;
++	size_t memsz;
++};
++
++static int write_all(int fd, const void *buf, size_t size)
++{
++	while (size) {
++		ssize_t n = write(fd, buf, size);
++		if (n < 0 && errno == EINTR)
++			continue;
++		if (n <= 0) {
++			if (!n)
++				errno = EIO;
++			return -1;
++		}
++		buf = (const char *)buf + n;
++		size -= n;
++	}
++	return 0;
++}
++
++long syscall(long number, ...)
++{
++	va_list ap;
++	unsigned long entry, count, flags, i;
++	const struct segment *segments;
++	const char *path = getenv("KEXEC_BUNDLE");
++	uint64_t total = 0;
++	uint32_t header32[2];
++	uint64_t entry_le, descriptor[3];
++	int fd, saved;
++	if (number != SYS_kexec_load) {
++		errno = ENOSYS;
++		return -1;
++	}
++	va_start(ap, number);
++	entry = va_arg(ap, unsigned long);
++	count = va_arg(ap, unsigned long);
++	segments = va_arg(ap, const struct segment *);
++	flags = va_arg(ap, unsigned long);
++	va_end(ap);
++	/* AArch64 or default architecture, with no crash/preserve flags. */
++	if (sizeof(unsigned long) != 8 || !path || path[0] != '/' ||
++	    !segments || !count || count > 16 ||
++	    (flags != 0 && flags != (183UL << 16))) {
++		errno = EINVAL;
++		return -1;
++	}
++	for (i = 0; i < count; i++) {
++		if (segments[i].bufsz > segments[i].memsz ||
++		    segments[i].bufsz > (256UL << 20) ||
++		    total + segments[i].bufsz > (512UL << 20)) {
++			errno = EINVAL;
++			return -1;
++		}
++		total += segments[i].bufsz;
++	}
++	fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
++	if (fd < 0)
++		return -1;
++	header32[0] = htole32(1);
++	header32[1] = htole32(count);
++	entry_le = htole64(entry);
++	if (write_all(fd, "KXMBNDL1", 8) ||
++	    write_all(fd, header32, sizeof(header32)) ||
++	    write_all(fd, &entry_le, sizeof(entry_le)))
++		goto fail;
++	for (i = 0; i < count; i++) {
++		descriptor[0] = htole64(segments[i].bufsz);
++		descriptor[1] = htole64(segments[i].mem);
++		descriptor[2] = htole64(segments[i].memsz);
++		if (write_all(fd, descriptor, sizeof(descriptor)))
++			goto fail;
++	}
++	for (i = 0; i < count; i++)
++		if (write_all(fd, segments[i].buf, segments[i].bufsz))
++			goto fail;
++	if (fsync(fd))
++		goto fail;
++	if (close(fd)) {
++		saved = errno;
++		unlink(path);
++		errno = saved;
++		return -1;
++	}
++	fprintf(stderr, "Captured %lu segments to %s; no kernel loaded.\n", count, path);
++	return 0;
++fail:
++	saved = errno;
++	close(fd);
++	unlink(path);
++	errno = saved;
++	return -1;
++}
++
++int reboot(int command)
++{
++	(void)command;
++	errno = EPERM;
++	return -1;
++}

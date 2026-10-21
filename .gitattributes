@@ -1,5 +1,15 @@
 * text=auto
 *.sh text eol=lf
-*.uuu text eol=lf
-*.bat text eol=crlf
+*.py text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.S text eol=lf
+*.patch text eol=lf
+*.toml text eol=lf
 *.md text eol=lf
+*.uuu text eol=lf
+*.service text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+percept text eol=lf
+init text eol=lf

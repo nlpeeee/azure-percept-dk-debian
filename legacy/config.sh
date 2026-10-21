@@ -6,9 +6,9 @@
 
 # ── Credentials ────────────────────────────────────────────────────────────
 # CHANGE THESE for security! These are burned into the rootfs at build time.
-ROOT_PASSWORD="percept"
+ROOT_PASSWORD=""        # REQUIRED: set before building (no default)
 NEW_USER="percept"
-NEW_USER_PASSWORD="percept"
+NEW_USER_PASSWORD=""   # REQUIRED: set before building (no default)
 
 # ── Network ────────────────────────────────────────────────────────────────
 HOSTNAME="percept-dk"

@@ -1,0 +1,66 @@
+# Every commonly used setting. Secrets (Wi-Fi passphrase, password hash) are better kept
+# in secrets.toml or referenced with *_file / *_env so this file stays shareable.
+schema = 1
+
+[board]
+name = "workbench"
+hostname = "percept-bench"
+timezone = "Europe/London"
+locale = "en_GB.UTF-8"
+
+[ssh]
+password_auth = false
+root_login = "disabled"
+port = 22
+
+[[user]]
+name = "percept"
+sudo = "nopasswd"
+groups = ["sudo", "dialout", "audio", "video", "plugdev"]
+authorized_keys_file = "~/.ssh/id_ed25519.pub"
+password_mode = "none"            # or "generate", or "hash" with password_hash_file / password_hash_env
+
+[network.ethernet]
+mode = "static"
+address = "192.168.50.20"
+prefix = 24
+gateway = "192.168.50.1"
+dns = ["192.168.50.1"]
+
+[network.wifi]
+enabled = true
+ssid = "MyNetwork"
+psk_env = "PERCEPT_WIFI_PSK"      # read from the environment, never stored in a file
+country = "GB"
+security = "wpa2"
+
+[rescue]
+net_mode = "static"               # easy to find if the board ever falls back to rescue
+address = "192.168.50.21"
+prefix = 24
+gateway = "192.168.50.1"
+
+[os]
+profile = "debian-trixie"
+
+[os.kernel]
+source = "distro"
+cmdline_extra = ""
+
+[os.features]
+gpu = true
+vpu = true
+usb_c_host = true
+camera = false
+upper_ram = true
+thermal = true
+
+[os.packages]
+extra = ["htop", "tmux"]
+
+[storage]
+layout = "auto"
+root_size = "fill"
+
+[install]
+method = "uuu"

@@ -1,0 +1,19 @@
+# Production: boot Debian trixie on p3 with Debian's stock kernel and initramfs.
+# /vmlinuz and /initrd.img are Debian's own symlinks to the current kernel, so
+# update-initramfs and kernel updates keep working (no hash pins on purpose).
+# Switches only (no kernel patches): see docs/debian-kernel-test.md.
+#
+# upper_ram=1   pass the 4th GB (0x100000000-0x13FFFFFFF) to Linux
+# thermal_fix=1 TMU #thermal-sensor-cells 0 -> 1 so qoriq_thermal registers
+# media=gpu-vpu mainline etnaviv GPU plus Hantro G1/G2 + VPU block controller
+#               (media=gpu for the GPU alone; the helper also gives the VPU
+#               power domain its clocks, without which hantro hangs the bus)
+# cma=256M      the vendor's 960 MiB CMA request cannot be placed, so the kernel
+#               falls back to a default pool; 64 MiB ran out under 1080p decode
+mode=kexec
+kernel=/vmlinuz
+initrd=/initrd.img
+upper_ram=1
+thermal_fix=1
+media=gpu-vpu
+cmdline=root=UUID=<ROOT-FS-UUID> ro console=ttymxc0,115200 earlycon=ec_imx6q,0x30860000 cpuidle.off=1 clk_ignore_unused pd_ignore_unused efi=noruntime net.ifnames=0 module_blacklist=rohm_bd718x7,bd718x7_regulator,imx_cpufreq_dt cma=256M

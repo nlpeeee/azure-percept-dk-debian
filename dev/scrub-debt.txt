@@ -1,0 +1,9 @@
+# Board-bound code that still carries lab identifiers. Each entry is a task:
+# generalise it (M4/M5) and delete the line. `scrub-scan.py --strict` ignores this file.
+launcher/init
+launcher/legacy-build-launcher.sh
+profiles/debian-trixie/legacy-build-trixie-rootfs.sh
+profiles/debian-trixie/hooks/legacy-stage-b.sh
+profiles/debian-trixie/native-board/builder-init
+profiles/debian-trixie/native-board/pack-trixie-rootfs.sh
+target/install.sh

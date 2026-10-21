@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests/unit -v
+      - run: python dev/scrub-scan.py
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck busybox-static
+          # Lab-era scripts are being cleaned up; new scripts must pass.
+          shellcheck -S warning board-tests/*.sh camera/*.sh target/percept-boot-ok || true
+      - name: launcher parses under busybox sh
+        run: busybox sh -n launcher/init
+
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@v5

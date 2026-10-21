@@ -1,0 +1,16 @@
+[Unit]
+Description=Mark trixie boot good for the Percept kexec launcher
+# Not tied to network-online.target: the unused FEC port keeps systemd-networkd-
+# wait-online failing for 2 minutes on every boot, which delayed confirmation to
+# ~3.5 minutes. "Good" means userspace is up and sshd is listening.
+Wants=ssh.service
+After=ssh.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sh -c 'i=0; while [ $i -lt 90 ]; do ss -ltn | grep -q ":22 " && exit 0; i=$((i+1)); sleep 1; done; echo "sshd not listening after 90 s" >&2; exit 1'
+ExecStartPre=/bin/sleep 15
+ExecStart=/usr/local/sbin/percept-boot-ok
+
+[Install]
+WantedBy=multi-user.target

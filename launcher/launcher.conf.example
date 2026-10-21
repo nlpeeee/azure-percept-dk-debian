@@ -1,0 +1,33 @@
+# /percept/launcher.conf on the ESP (FAT, mmcblk0p1). Read by the launcher
+# initramfs; one KEY=VALUE per line, no quoting, no shell expansion.
+#
+# mode=kexec   capture and execute the kernel below (counts toward failcount)
+# mode=rescue  stay on the stock kernel with dropbear SSH on port 22
+# kernel/initrd: absolute paths on p3 (mmcblk0p3), mounted read-only, noload.
+# cmdline: passed verbatim; characters A-Z a-z 0-9 _ . , = : / + - and space.
+# kernel_sha256/initrd_sha256: optional; a mismatch selects rescue mode.
+#
+# /percept/failcount holds the number of unconfirmed boots. The launcher
+# enters rescue mode at 3, otherwise increments it before each kexec.
+# Trixie's percept-boot-ok.service resets it to 0. Remove the file or write 0
+# to re-arm after rescue.
+
+# Step 3 launcher test: the experiment 08 RAM-only Debian initramfs (reboots
+# itself after 180 s, so three cycles end in rescue mode).
+mode=kexec
+kernel=/boot/vmlinuz-6.12.113+deb13-arm64
+kernel_sha256=391a3b39b265585ed094fba56994c4613a3c41fc65b9670e42da5a66d63ca07e
+initrd=/boot/initrd.img-6.12.113+deb13-arm64
+initrd_sha256=8d2f25e5f52b25c5e654946067a45614d38fcf6e41c4ab589409426bb6c7ae8b
+cmdline=console=ttymxc0,115200 earlycon=ec_imx6q,0x30860000 ignore_loglevel initcall_debug clk_ignore_unused pd_ignore_unused efi=noruntime cpuidle.off=1
+
+# Final trixie install (replace the block above; fill in the trixie UUID):
+#mode=kexec
+#kernel=/boot/vmlinuz-6.12.113+deb13-arm64
+#initrd=/boot/initrd.img-6.12.113+deb13-arm64
+#cmdline=root=UUID=<trixie-uuid> ro console=ttymxc0,115200 cpuidle.off=1 clk_ignore_unused pd_ignore_unused efi=noruntime net.ifnames=0 module_blacklist=rohm_bd718x7,bd718x7_regulator,imx_cpufreq_dt
+
+# Fresh FDT CPU table validation; default unchanged. Does not enable CPUfreq.
+# rated preserves fuse masks (this unit: 800/1300 MHz).
+# oc1500 changes only the 1500 MHz mask <8 3> to <4 4>; overclock.
+cpu_profile=unchanged

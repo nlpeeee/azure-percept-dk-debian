@@ -102,3 +102,22 @@ The command verifies the image, firmware and script hashes, requires one known
 USB device, and asks for ERASE my-percept before running the matching vendor
 script. The pinned uuu is downloaded if needed; --uuu can select your existing
 restoration executable. No fuse changes are performed.
+
+## Image pipeline validation
+
+The complete source build was exercised with a separate, password-only
+installer-smoke configuration and generated credentials. It produced a
+4,436,525,056-byte sparse GPT image using Debian 6.12.113+deb13-arm64.
+Checks passed for GPT/filesystem integrity, root ownership and setuid bits,
+SSH password policy, custom recovery username/password, matching filesystem
+UUIDs, the 1024-byte GRUB environment, zero failure counter, signed stock
+kernel location on the ESP, CPU oc1500 policy, and removal of build host keys.
+The generated image was not flashed. Its source revision and exact package
+versions are in its personal manifest; user settings and credentials are
+excluded from the repository.
+
+The current software suite has 114 passing tests on WSL. Main Windows Python
+3.9 compatibility was also exercised. Full USB-image hardware qualification
+requires a real board configuration, data preservation, flash, three cold
+boots, rescue and kernel-update rollback tests. The smoke build does not
+establish those hardware results.

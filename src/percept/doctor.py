@@ -19,6 +19,7 @@ LINUX_TOOLS = {
     "mkfs.vfat": ("dosfstools", "creates the EFI system partition"),
     "mcopy": ("mtools", "writes files into the EFI partition image"),
     "unshare": ("util-linux", "private mount namespaces and rootless chroot"),
+    "newuidmap": ("uidmap", "gives the rootless build a full range of user ids (debootstrap needs them)"),
     "xz": ("xz-utils", "unpacks kernel sources"),
     "zstd": ("zstd", "compresses the root filesystem"),
     "tar": ("tar", "archives"),

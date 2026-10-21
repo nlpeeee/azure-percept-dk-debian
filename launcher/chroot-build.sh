@@ -71,6 +71,11 @@ fi
 echo "== assembling initramfs"
 python3 /src/launcher/mkinitramfs.py "${args[@]}"
 
+verify=(/out/launcher.cpio.gz)
+[ "${NO_MODULES:-0}" != 1 ] || verify+=(--no-modules)
+[ -z "${AUTHORIZED_KEYS:-}" ] || verify+=(--allow-authorized-keys)
+python3 /src/launcher/verify_archive.py "${verify[@]}" > /out/archive-validation.json
+
 echo "== self-check: every program starts with only the archive's own files"
 check=$work/check
 mkdir -p "$check"

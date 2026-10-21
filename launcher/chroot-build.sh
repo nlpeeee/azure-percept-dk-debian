@@ -84,5 +84,9 @@ chroot "$check" /usr/bin/tar --version | head -1
 chroot "$check" /usr/bin/zstd -V
 chroot "$check" /bin/sh -c '. /lib/percept/percept-config.sh' 2>&1 || true
 for h in upper thermal media cpu pmic; do chroot "$check" /bin/percept-fdt-$h 2>&1 | head -1 || true; done
+python3 /src/build/write-manifest.py --output /out/build.manifest.json --kind launcher \
+    --source-commit "$SOURCE_COMMIT" --artifact /out/launcher.cpio.gz \
+    --input /src/launcher/init --input /src/launcher/lib/percept-config.sh \
+    --input /dl/kexec-tools-2.0.25.tar.xz
 echo "== done"
 sha256sum /out/launcher.cpio.gz

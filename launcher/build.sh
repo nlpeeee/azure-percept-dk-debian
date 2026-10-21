@@ -33,7 +33,7 @@ fetch "$(manifest_get kexec-tools-2.0.25 url)" "$DL/kexec-tools-2.0.25.tar.xz" "
 
 mkdir -p "$out"
 binds="$PERCEPT_ROOT:/src:ro $DL:/dl:ro $out:/out"
-envs=(NO_MODULES=$no_modules)
+envs=(NO_MODULES=$no_modules SOURCE_COMMIT=$(git -C "$PERCEPT_ROOT" rev-parse HEAD))
 if [ "$no_modules" = 0 ]; then binds="$binds $modules:/modules:ro"; fi
 if [ -n "$keys" ]; then
     cp "$keys" "$out/authorized_keys.input"

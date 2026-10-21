@@ -79,3 +79,11 @@ url = "https://mcr.microsoft.com/v2/azureedgedevices/azureeyemodule/manifests/23
 sha256 = "ce25188801bbb5ebf855e2c66a95d11cabdf3bc4947c9a254c10980f2adc32b6"
 redistributable = false
 used_by = ["camera"]
+
+[[input]]
+id = "kexec-mod-4ba956f"
+title = "kexec-mod pinned source (Percept patch base)"
+url = "https://codeload.github.com/fabianishere/kexec-mod/tar.gz/4ba956fd60b29d2fea324515596b392afdcfa2c5"
+sha256 = "5f0dd27b6d3cfeb946d8f6fbc40047b1e82e29646af106fa6b29df758df6d4fe"
+redistributable = true
+used_by = ["kexecmod"]

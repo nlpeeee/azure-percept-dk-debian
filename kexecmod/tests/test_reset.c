@@ -19,7 +19,7 @@ static u32 ioread32be(void *addr);
 static void iowrite32(u32 value, void *addr);
 static void iowrite32be(u32 value, void *addr);
 static void udelay(unsigned int usec) { delays += usec; }
-#include "../../sources/kexec-mod/kernel/percept_caam.c"
+#include "percept_caam.c"
 
 static unsigned int ring_of(void *addr)
 {

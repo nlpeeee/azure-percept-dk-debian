@@ -31,6 +31,9 @@ case "$src" in
         head_bytes=$(( (165888 + 4194304) * 512 ))
         say "streaming the first $((head_bytes / 1048576)) MiB of $member"
         unzip -p "$src" "$member" 2>/dev/null | head -c "$head_bytes" > "$dest/ms-head.img" || true
+        # GPT validation needs the original disk geometry, even with a sparse tail.
+        full_bytes=$(python3 -c 'import sys,zipfile;print(zipfile.ZipFile(sys.argv[1]).getinfo(sys.argv[2]).file_size)' "$src" "$member")
+        truncate -s "$full_bytes" "$dest/ms-head.img"
         raw=$dest/ms-head.img
         ;;
     *) [ -f "$src" ] || die "not a file: $src" ;;

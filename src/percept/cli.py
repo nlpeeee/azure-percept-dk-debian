@@ -4,6 +4,7 @@ import argparse
 import getpass
 import os
 import sys
+import subprocess
 
 from . import __version__, config as cfgmod, configdoc, configure, doctor, launcher_conf, profiles
 from . import redact, sha512crypt, tomlmini, validate
@@ -228,7 +229,7 @@ def main(argv=None):
         from .build.commands import dispatch
         try:
             return dispatch(args, repo_root())
-        except (OSError, ValueError, RuntimeError) as exc:
+        except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
             print("error: " + str(exc))
             return 1
     handler = {

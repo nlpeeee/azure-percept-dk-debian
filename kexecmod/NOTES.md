@@ -1,3 +1,8 @@
+> Current status (21 October 2026): the module pair was independently rebuilt
+> twice in WSL and the resulting launcher booted Debian successfully, confirmed
+> over UART and SSH. These are historical bring-up notes; their earlier
+> unconfirmed-jump statements are superseded by docs/build-wsl.md.
+
 # Experimental Percept frontend
 
 On 2026-10-20, this port's two modules **loaded without Microsoft's seed,
@@ -96,10 +101,10 @@ All integers are little endian, with no padding:
 | Part | Fields |
 |---|---|
 | 24-byte header | 8 bytes `KXMBNDL1`, u32 version=1, u32 count, u64 entry |
-| count × 24-byte descriptors | u64 payload length, u64 destination, u64 destination length |
+| count Ã— 24-byte descriptors | u64 payload length, u64 destination, u64 destination length |
 | payload | segment buffers in descriptor order, with no alignment padding |
 
-Only normal loads are supported, with 1–16 segments. Each buffer is limited to
+Only normal loads are supported, with 1â€“16 segments. Each buffer is limited to
 256 MiB and total payload to 512 MiB. Destination alignment, overlap, overflow,
 buffer lengths, entry containment, short reads and trailing bytes are checked.
 Zero-byte buffers represent zero-filled destination segments.

@@ -10,7 +10,6 @@ from . import __version__, config as cfgmod, configdoc, configure, doctor, launc
 from . import redact, sha512crypt, tomlmini, validate
 
 PLANNED = {
-    "flash": "M5 - flash an image with uuu",
     "install-over-ssh": "M6 - convert a running board",
     "verify": "M7 - run board-tests against a board",
     "recover": "M7 - USB recovery helpers",
@@ -209,6 +208,10 @@ def build_parser():
             p.add_argument("--board", required=True)
             p.add_argument("--target", choices=["image"], default="image")
             p.add_argument("--resolved-stdin", action="store_true", help=argparse.SUPPRESS)
+    p=sub.add_parser("flash", help="verify a personal installer and flash one board using Windows uuu")
+    p.add_argument("--board", required=True)
+    p.add_argument("--manifest", required=True)
+    p.add_argument("--uuu", help="path to the Windows uuu executable")
     for name, text in PLANNED.items():
         sub.add_parser(name, help="(planned) " + text)
     return ap
@@ -225,6 +228,13 @@ def main(argv=None):
         return 2
     if args.cmd == "profile" and args.action == "check" and not args.path:
         ap.error("profile check needs a directory")
+    if args.cmd == "flash":
+        from .flash import flash
+        try:
+            return flash(repo_root(), args.manifest, args.board, args.uuu)
+        except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+            print("error: " + str(exc))
+            return 1
     if args.cmd in ("fetch", "build"):
         from .build.commands import dispatch
         try:

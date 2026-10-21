@@ -22,4 +22,8 @@ kernel. The stock kernel has no `kexec`, so two small modules (`arch.ko`,
 - `tests/test_reset.c`: host-side test of the CAAM reset logic with a fake register file.
 - `SOURCE-OFFER.md`: where the corresponding source for any binary release lives.
 
-The module build itself (`kexecmod/build.sh`, in the arm64 build chroot) lands in M4.
+Build with `bash kexecmod/build.sh` in WSL/Linux after `percept fetch`. This
+uses the pinned upstream/Linux sources and recovered stock export evidence,
+validates the descriptor and disassembly, and writes hashes plus provenance.
+Two independent builds were byte-identical and boot-tested in M4; see
+[WSL build validation](../docs/build-wsl.md).

@@ -43,7 +43,8 @@ privately over stdin to the WSL process. They are not committed or echoed in log
 The build currently supports the Debian trixie distro-kernel image profile.
 Run the same commands directly inside WSL for a Linux-only build.
 
-Output is under WSL out/BOARD/TIMESTAMP/:
+Output is under WSL out/BOARD/TIMESTAMP/. A successful Windows-initiated build
+also copies final files (not filesystem staging) to Windows out/BOARD/TIMESTAMP/:
 
 - BOARD-PERSONAL.raw: sparse GPT disk image, containing personal credentials.
 - BOARD-PERSONAL.uuu: vendor-based flash script matching that disk image.
@@ -89,3 +90,15 @@ This proves M4 for that artifact set. A newly composed USB image remains
 unqualified until it has been flashed and booted; hardware_tested is false in
 its build manifest. Cold boots, rescue and kernel-update tests are separate
 acceptance steps. Use the established Microsoft factory restoration procedure.
+
+## Flash from Windows
+
+Connect the board in the established USB recovery mode. Keep its data backup
+and original Microsoft restoration package available. Then:
+
+    python percept flash --board my-percept --manifest PATH-TO-PERSONAL.manifest.json
+
+The command verifies the image, firmware and script hashes, requires one known
+USB device, and asks for ERASE my-percept before running the matching vendor
+script. The pinned uuu is downloaded if needed; --uuu can select your existing
+restoration executable. No fuse changes are performed.

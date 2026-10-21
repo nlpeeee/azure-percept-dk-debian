@@ -2,6 +2,7 @@
 """Build/fetch CLI handlers, including Windows-to-WSL handoff."""
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -25,13 +26,25 @@ def dispatch(args,root):
         repo=args.wsl_repo or home+'/'+Path(root).name
         local=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
         remote=subprocess.check_output(['wsl.exe','-d',distro,'--cd',repo,'--','git','rev-parse','HEAD'],text=True).strip()
+        if subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True).strip():
+            raise ValueError('commit Windows source changes before building')
         if local!=remote:raise ValueError('WSL source differs; commit Windows changes, then git pull --ff-only origin main in WSL')
         argv=[args.cmd]
         body=None
         if args.cmd=='build':
             argv+=['--board',cfg['board']['name'],'--target','image','--resolved-stdin'];body=json.dumps(cfg)
         elif args.recovery:argv+=['--recovery',wsl.win_to_wsl_path(os.path.abspath(args.recovery))]
-        return subprocess.run(wsl.reexec_argv(distro,repo,argv),input=body,text=True).returncode
+        status=subprocess.run(wsl.reexec_argv(distro,repo,argv),input=body,text=True).returncode
+        if status==0 and args.cmd=='build':
+            base=Path(wsl.wsl_to_win_path(repo,distro))/'out'/cfg['board']['name']
+            completed=sorted(p.parent for p in base.glob('*/*-PERSONAL.manifest.json'))
+            if not completed:raise ValueError('WSL build reported success without an image manifest')
+            latest=completed[-1];destination=Path(root)/'out'/cfg['board']['name']/latest.name
+            destination.mkdir(parents=True,exist_ok=True)
+            for file in latest.iterdir():
+                if file.is_file():shutil.copy2(file,destination/file.name)
+            print('Windows installer files: '+str(destination))
+        return status
     if args.cmd=='fetch':pipeline.fetch(root,args.recovery)
     else:pipeline.build(root,cfg)
     return 0

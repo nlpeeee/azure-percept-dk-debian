@@ -168,7 +168,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(rc, 0, out)
 
     def test_planned_commands_say_so(self):
-        rc, out = run_cli(self.root, "flash")
+        rc, out = run_cli(self.root, "install-over-ssh")
         self.assertEqual(rc, 2)
         self.assertIn("not implemented yet", out)
 

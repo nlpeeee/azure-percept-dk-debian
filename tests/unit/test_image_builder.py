@@ -29,6 +29,24 @@ class PasswordRecovery(unittest.TestCase):
         self.assertEqual(files['rescue_username'],b'rescueadmin\n')
         self.assertEqual(files['rescue_password_hash'].decode().strip(),res.config['user'][0]['password_hash'])
         self.assertNotIn('authorized_keys',files)
+    def test_wizard_collects_password_only_and_separate_recovery_password(self):
+        from test_cli_end_to_end import Scripted
+        from percept import configure
+        answers=Scripted(['unit','unit-host','UTC','unituser','type','s',
+            'example-user-password-293','example-user-password-293','y','n',
+            'dhcp','n','dhcp','rescueadmin','y',
+            'example-rescue-password-591','example-rescue-password-591','oc1500','uuu'])
+        with tempfile.TemporaryDirectory() as home:
+            cfg=configure.run_wizard(configure.Prompter(answers,answers,lambda *_:None),home=home)
+        self.assertEqual(answers.answers,[])
+        result=validate.validate(cfg)
+        self.assertTrue(result.ok,result.errors)
+        self.assertTrue(result.config['ssh']['password_auth'])
+        self.assertTrue(result.config['rescue']['password_auth'])
+        self.assertEqual(result.config['rescue']['username'],'rescueadmin')
+        self.assertEqual(result.config['os']['cpu_profile'],'oc1500')
+        self.assertNotEqual(result.config['user'][0]['password_hash'],result.config['rescue']['password_hash'])
+        self.assertEqual(result.config['user'][0]['authorized_keys'],[])
     def test_invalid_recovery_username_rejected(self):
         c=helpers.minimal_cfg();c['rescue']={'username':'bad:name'}
         self.assertFalse(validate.validate(c).ok)

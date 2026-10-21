@@ -8,14 +8,14 @@ built in.
 > **Status: work in progress.** The boot method below is proven on one board.
 > The turnkey `percept` installer is being built in the open: today it can
 > check your PC (`doctor`), collect and validate your per-board settings
-> (`configure`) and validate OS profiles. Source image building is implemented and being validated; flashing remains
-> the next milestone - see [Roadmap](#roadmap). Nothing here is affiliated with
+> (`configure`) and validate OS profiles. Source image building and the Windows flasher are implemented; full image
+> qualification remains in progress - see [Roadmap](#roadmap). Nothing here is affiliated with
 > or endorsed by Microsoft.
 
 ## How it works
 
 The DK's firmware only boots a Microsoft-signed chain
-(UEFI â†’ shim â†’ GRUB â†’ Microsoft's Linux 5.4.3). Instead of fighting that, this
+(UEFI Ã¢â€ â€™ shim Ã¢â€ â€™ GRUB Ã¢â€ â€™ Microsoft's Linux 5.4.3). Instead of fighting that, this
 project keeps the signed chain and uses the stock kernel only as a *launcher*:
 
 1. GRUB boots Microsoft's kernel with a small initramfs (the *launcher*) from
@@ -36,7 +36,7 @@ switches and the firmware device tree is adapted at boot. Details:
 
 | Works | Not working / left alone |
 |---|---|
-| 4 GiB RAM; CPU/PMIC scaling at 800â€“1300 MHz, optional experimental 1500 MHz | Deep idle states (workaround retained) |
+| 4 GiB RAM; CPU/PMIC scaling at 800Ã¢â‚¬â€œ1300 MHz, optional experimental 1500 MHz | Deep idle states (workaround retained) |
 | Vivante GPU (etnaviv, GLES verified) | External RTC, AK audio codec |
 | Hantro G1/G2 video decode (H.264, VP8, MPEG-2, HEVC, VP9, bit-exact) | Ethernet FEC (unused on this board) |
 | USB-C port (host mode only), USB 3 | USB-C device/peripheral mode |
@@ -63,8 +63,8 @@ python percept configure     # asks for SSH key, Wi-Fi, network, hostname; write
 ```
 
 `percept fetch` and `percept build --board NAME --target image` now run on
-WSL/Linux. See [WSL build instructions](docs/build-wsl.md). `percept flash` and
-`percept install-over-ssh` remain forthcoming. Until then the proven manual procedure is in
+WSL/Linux. See [WSL build instructions](docs/build-wsl.md). `percept flash` verifies the generated artifacts before running Windows uuu.
+`percept install-over-ssh` remains forthcoming. Until then the proven manual procedure is in
 [docs/legacy/trixie-install-lab.md](docs/legacy/trixie-install-lab.md) (written
 for the first board; expect board-specific values).
 
@@ -82,7 +82,7 @@ falls back to SSH rescue mode on its own after three failed boots.
 
 | Path | What |
 |---|---|
-| `src/percept/` | The `percept` command (config, validation, doctor; build/flash to come) |
+| `src/percept/` | The `percept` command (config, validation, doctor, image build and flash) |
 | `launcher/` | Launcher init script, GRUB config, device-tree helpers |
 | `kexecmod/` | kexec kernel-module patches and build helpers (GPL-2.0) |
 | `target/` | Scripts that run on the board (boot confirmation, installer) |
@@ -96,8 +96,8 @@ falls back to SSH rescue mode on its own after three failed boots.
 
 - [x] Boot method proven (Debian 13 on stock 6.12 via launcher + kexec)
 - [x] Per-board config schema, validation, redaction, `doctor`
-- [ ] Reproducible launcher and kexec-module build (WSL2/Linux)
-- [ ] `percept build` (personalised disk image) and `percept flash` (via `uuu`)
+- [x] Reproducible launcher and kexec-module build (WSL2/Linux), boot-tested
+- [ ] Full image qualification (`percept build` and `percept flash` implemented)
 - [ ] `percept install-over-ssh` for boards that are already running
 - [ ] Second-board verification, cold-boot tests, prebuilt release assets
 

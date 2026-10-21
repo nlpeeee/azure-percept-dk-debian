@@ -1,7 +1,9 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 set -euo pipefail
-export DEBIAN_FRONTEND=noninteractive LC_ALL=C
+# Debian mirrors provide Architecture: all; debootstrap's foreign stage does
+# not preserve this flag for dependency/progress handling in its second stage.
+export DEBIAN_FRONTEND=noninteractive LC_ALL=C ARCH_ALL_SUPPORTED=1
 printf '#!/bin/sh\nexit 101\n' >/usr/sbin/policy-rc.d
 chmod 755 /usr/sbin/policy-rc.d
 /debootstrap/debootstrap --second-stage

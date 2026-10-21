@@ -1,38 +1,41 @@
 #!/bin/busybox sh
+# SPDX-License-Identifier: MIT
 # Percept launcher: PID1 of the small initramfs that GRUB loads from the ESP
 # with the stock 5.4.3-26.cm1 kernel. Captures a kexec bundle for the kernel
 # named in /percept/launcher.conf on the ESP and executes it through kexec_mod.
-# Rescue mode (stock kernel, static network, dropbear SSH, no kexec) is used
-# for percept.mode=rescue on the command line, mode=rescue in launcher.conf,
-# FAIL_LIMIT unconfirmed boots, or any failure on the way to the new kernel.
+# Rescue mode (stock kernel, network, dropbear SSH, no kexec) is used for
+# percept.mode=rescue on the command line, mode=rescue in launcher.conf,
+# fail_limit unconfirmed boots, or any failure on the way to the new kernel.
 # The root partition is only ever mounted read-only with journal replay off.
+#
+# Nothing here is specific to one board: the ESP/root devices, the network and
+# the device-tree fixups all come from launcher.conf (docs/launcher-conf.md).
+# The parsing logic lives in /lib/percept/percept-config.sh so it can be tested
+# on a PC.
 BB=/bin/busybox
 SENDER=/bin/udp_log_sender
 CONFIG=/etc/percept-test
-SOURCE_IP=192.168.1.60
-SOURCE_PREFIX=24
-RECEIVER_IP=192.168.1.47
-RECEIVER_PORT=6666
-TARGET_MAC=fc:34:97:65:90:a0
-ESP_DEVICE=/dev/mmcblk0p1
-ROOT_DEVICE=/dev/mmcblk0p3
 ESP=/esp
 ROOT=/target
 CONF=$ESP/percept/launcher.conf
 FAILCOUNT=$ESP/percept/failcount
-FAIL_LIMIT=3
 KEXEC=/sbin/kexec
-CAPTURE=/lib/percept/capture.so
-ARCH_MODULE=/lib/percept/arch.ko
-CORE_MODULE=/lib/percept/core.ko
+LIB=/lib/percept
+CAPTURE=$LIB/capture.so
+ARCH_MODULE=$LIB/arch.ko
+CORE_MODULE=$LIB/core.ko
 BUNDLE=/run/marked.bundle
 PARAMETERS=/sys/module/kexec_mod/parameters
 LOG=/run/launcher.log
 sequence=0
 network_ready=0
+local_ip=
 esp_mounted=0
 root_mounted=0
 failcount=unread
+config_ok=0
+ESP_DEVICE=
+ROOT_DEVICE=
 cr=$(printf '\r')
 
 # Syntax-check freely, but reject accidental ordinary execution on a host.
@@ -49,6 +52,9 @@ local_log() {
     fi
 }
 
+. "$LIB/percept-config.sh"
+config_defaults
+
 read_identity() {
     experiment=$($BB cat "$CONFIG/experiment-id" 2>/dev/null)
     source_boot=$($BB cat "$CONFIG/source-boot-id" 2>/dev/null)
@@ -59,8 +65,9 @@ read_identity() {
 emit() {
     sequence=$((sequence + 1))
     local_log "event=$1 detail=$2 sequence=$sequence source_boot=$source_boot actual_boot=$actual_boot"
-    if [ "$network_ready" = 1 ]; then
-        # The existing sender accepts at most 128 token characters for detail.
+    # UDP breadcrumbs only when a receiver is configured and the sender is present.
+    if [ "$network_ready" = 1 ] && [ -n "$conf_log_receiver_ip" ] && [ -x "$SENDER" ] && [ -n "$local_ip" ]; then
+        # The sender accepts at most 128 token characters for detail.
         # Keep full text in the local log; encode runtime text for UDP.
         detail_remaining=$2
         detail_token=
@@ -77,11 +84,9 @@ emit() {
         done
         [ -n "$detail_token" ] || detail_token=empty
         # A missing receiver costs at most three 250 ms attempts per record.
-        "$SENDER" "$SOURCE_IP" "$RECEIVER_IP" "$RECEIVER_PORT" \
+        "$SENDER" "$local_ip" "$conf_log_receiver_ip" "$conf_log_receiver_port" \
             "$experiment" "$source_boot" "$actual_boot" "$sequence" "$1" "$detail_token"
-        # Own variable: callers keep their command status in $result (the
-        # first production boot failed capture because this overwrote it
-        # when no PC receiver was acknowledging).
+        # Own variable: callers keep their command status in $result.
         send_status=$?
         if [ "$send_status" != 0 ]; then local_log "udp_ack_failed_status_$send_status"; fi
     fi
@@ -94,41 +99,72 @@ boot_seconds() {
     fi
 }
 
-wait_for_block() {
+# wait_for_spec SPEC SECONDS : wait for the device and set $resolved to its /dev path.
+wait_for_spec() {
     # Built-in eSDHC probing can finish after PID1 starts.
     boot_seconds
-    block_deadline=$((seconds + $2))
-    while [ ! -b "$1" ]; do
+    spec_deadline=$((seconds + $2))
+    while :; do
+        resolved=$(resolve_device "$1") && [ -n "$resolved" ] && [ -b "$resolved" ] && return 0
         boot_seconds
-        [ "$seconds" -lt "$block_deadline" ] || return 1
+        [ "$seconds" -lt "$spec_deadline" ] || return 1
         $BB sleep 1
     done
 }
 
-network_up() {
-    [ "$network_ready" = 0 ] || return 0
+# Pick the wired interface: by driver (igb) when "auto", or by name / MAC from net_if.
+find_interface() {
     interface=
     boot_seconds
     find_deadline=$((seconds + 10))
     while :; do
+        fallback=
         for path in /sys/class/net/*; do
-            [ -r "$path/address" ] || continue
-            IFS= read -r candidate_mac <"$path/address"
-            if [ "$candidate_mac" = "$TARGET_MAC" ]; then
-                interface=${path##*/}
-                break
-            fi
+            name=${path##*/}
+            [ "$name" != lo ] || continue
+            case "$conf_net_if" in
+                auto)
+                    [ -e "$path/device" ] || continue
+                    [ ! -d "$path/wireless" ] || continue
+                    driver=$($BB readlink "$path/device/driver" 2>/dev/null)
+                    driver=${driver##*/}
+                    if [ "$driver" = igb ]; then interface=$name; break; fi
+                    [ -n "$fallback" ] || fallback=$name
+                    ;;
+                *:*)
+                    [ -r "$path/address" ] || continue
+                    IFS= read -r candidate_mac <"$path/address"
+                    want=$(printf '%s' "$conf_net_if" | $BB tr 'A-F' 'a-f')
+                    if [ "$candidate_mac" = "$want" ]; then interface=$name; break; fi
+                    ;;
+                *)
+                    if [ "$name" = "$conf_net_if" ]; then interface=$name; break; fi
+                    ;;
+            esac
         done
         [ -z "$interface" ] || break
         boot_seconds
-        [ "$seconds" -lt "$find_deadline" ] || break
+        if [ "$seconds" -ge "$find_deadline" ]; then
+            # Nothing named igb appeared in time: take any other physical NIC.
+            interface=$fallback
+            break
+        fi
         $BB sleep 1
     done
     if [ -z "$interface" ]; then
-        local_log "target_mac_not_found"
+        local_log "network_interface_not_found_$conf_net_if"
         return 1
     fi
     local_log "matched_interface_$interface"
+}
+
+network_up() {
+    [ "$network_ready" = 0 ] || return 0
+    if [ "$conf_net_mode" = none ]; then
+        local_log "network_disabled"
+        return 1
+    fi
+    find_interface || return 1
     if ! $BB timeout -k 1 5 "$BB" ip link set dev "$interface" up; then
         local_log "interface_up_failed"
         return 1
@@ -143,21 +179,32 @@ network_up() {
         $BB sleep 1
         tries=$((tries + 1))
     done
-    # Static address only: no DHCP client, DNS configuration or gateway.
-    if [ "$carrier" = 1 ] &&
-       $BB timeout -k 1 5 "$BB" ip address add "$SOURCE_IP/$SOURCE_PREFIX" dev "$interface" &&
-       $BB timeout -k 1 5 "$BB" ip route add "$RECEIVER_IP/32" dev "$interface" scope link src "$SOURCE_IP"; then
-        network_ready=1
-        emit network_ready "$interface"
-        return 0
+    if [ "$carrier" != 1 ]; then
+        local_log "no_carrier"
+        return 1
     fi
-    local_log "static_network_setup_failed"
-    return 1
+    if [ "$conf_net_mode" = static ]; then
+        $BB timeout -k 1 5 "$BB" ip address add "$conf_net_ip/$conf_net_prefix" dev "$interface" || {
+            local_log "static_address_failed"
+            return 1
+        }
+        if [ -n "$conf_net_gw" ]; then
+            $BB timeout -k 1 5 "$BB" ip route add default via "$conf_net_gw" dev "$interface" ||
+                local_log "static_gateway_failed"
+        fi
+    else
+        $BB timeout -k 1 25 "$BB" udhcpc -i "$interface" -n -q -t 5 -T 3 -s "$LIB/udhcpc.script" ||
+            { local_log "dhcp_failed"; return 1; }
+    fi
+    local_ip=$($BB ip -4 -o address show dev "$interface" 2>/dev/null | { read -r _ _ _ addr _; printf '%s' "${addr%/*}"; })
+    network_ready=1
+    emit network_ready "${interface}_${conf_net_mode}"
+    return 0
 }
 
 mount_esp() {
     [ "$esp_mounted" = 0 ] || return 0
-    wait_for_block "$ESP_DEVICE" 15 || return 1
+    [ -n "$ESP_DEVICE" ] || return 1
     $BB mount -t vfat -o "$1,noatime" "$ESP_DEVICE" "$ESP" || return 1
     esp_mounted=1
 }
@@ -185,78 +232,6 @@ unload_kexec_modules() {
     done
 }
 
-valid_path() {
-    case "$1" in
-        /*) ;;
-        *) return 1 ;;
-    esac
-    case "$1" in
-        *..*|*//*|*[!A-Za-z0-9_./+-]*) return 1 ;;
-    esac
-}
-
-valid_hash() {
-    case "$1" in
-        '') return 0 ;;
-        *[!0-9a-f]*) return 1 ;;
-    esac
-    [ "${#1}" = 64 ]
-}
-
-read_config() {
-    conf_mode=kexec
-    conf_kernel=
-    conf_initrd=
-    conf_cmdline=
-    conf_kernel_sha256=
-    conf_initrd_sha256=
-    conf_upper_ram=0
-    conf_thermal_fix=0
-    conf_media=none
-    conf_cpu_profile=unchanged
-    [ -r "$CONF" ] || { local_log "config_missing"; return 1; }
-    while IFS= read -r line || [ -n "$line" ]; do
-        # Tolerate files edited on Windows.
-        line=${line%"$cr"}
-        case "$line" in
-            ''|'#'*) continue ;;
-            *=*) ;;
-            *) local_log "config_malformed_line"; return 1 ;;
-        esac
-        key=${line%%=*}
-        value=${line#*=}
-        case "$key" in
-            mode) conf_mode=$value ;;
-            kernel) conf_kernel=$value ;;
-            initrd) conf_initrd=$value ;;
-            cmdline) conf_cmdline=$value ;;
-            kernel_sha256) conf_kernel_sha256=$value ;;
-            initrd_sha256) conf_initrd_sha256=$value ;;
-            upper_ram) conf_upper_ram=$value ;;
-            thermal_fix) conf_thermal_fix=$value ;;
-            media) conf_media=$value ;;
-            cpu_profile) conf_cpu_profile=$value ;;
-            *) local_log "config_unknown_key_$key"; return 1 ;;
-        esac
-    done <"$CONF"
-    case "$conf_mode" in
-        kexec|rescue) ;;
-        *) local_log "config_invalid_mode"; return 1 ;;
-    esac
-    [ "$conf_mode" = rescue ] && return 0
-    case "$conf_upper_ram" in 0|1) ;; *) local_log "config_invalid_upper_ram"; return 1 ;; esac
-    case "$conf_thermal_fix" in 0|1) ;; *) local_log "config_invalid_thermal_fix"; return 1 ;; esac
-    case "$conf_media" in none|gpu|gpu-vpu) ;; *) local_log "config_invalid_media"; return 1 ;; esac
-    case "$conf_cpu_profile" in unchanged|rated|oc1500) ;; *) local_log "config_invalid_cpu_profile"; return 1 ;; esac
-    valid_path "$conf_kernel" || { local_log "config_invalid_kernel"; return 1; }
-    valid_path "$conf_initrd" || { local_log "config_invalid_initrd"; return 1; }
-    valid_hash "$conf_kernel_sha256" || { local_log "config_invalid_kernel_sha256"; return 1; }
-    valid_hash "$conf_initrd_sha256" || { local_log "config_invalid_initrd_sha256"; return 1; }
-    case "$conf_cmdline" in
-        ''|*[!A-Za-z0-9_.,=:/+\ -]*) local_log "config_invalid_cmdline"; return 1 ;;
-    esac
-}
-
 check_hash() {
     [ -n "$2" ] || return 0
     actual_hash=$($BB sha256sum "$1") || return 1
@@ -266,7 +241,7 @@ check_hash() {
 write_status() {
     {
         printf 'Percept launcher rescue mode on the stock kernel.\n'
-        printf 'reason=%s\nfailcount=%s\nlimit=%s\n' "$1" "$failcount" "$FAIL_LIMIT"
+        printf 'reason=%s\nfailcount=%s\nlimit=%s\n' "$1" "$failcount" "$conf_fail_limit"
         printf 'experiment=%s\nsource_boot=%s\nactual_boot=%s\nkernel_release=%s\n\n' \
             "$experiment" "$source_boot" "$actual_boot" "$actual_release"
         printf 'Reset the counter:  mount %s /boot/efi && echo 0 >/boot/efi/percept/failcount && umount /boot/efi\n\n' "$ESP_DEVICE"
@@ -320,6 +295,8 @@ rescue() {
     # Leave the ESP unmounted so it can be imaged or edited deliberately.
     unmount_esp || local_log "esp_unmount_failed"
     $BB chmod 600 /root/.ssh/authorized_keys /etc/dropbear/* 2>/dev/null
+    # An unreadable configuration must not leave half-parsed network settings.
+    [ "$config_ok" = 1 ] || config_defaults
     network_up || local_log "rescue_without_network"
     $BB --install -s
     printf '%s\n' 'root:x:0:0:root:/root:/bin/sh' >/etc/passwd
@@ -346,11 +323,38 @@ rescue() {
     # Password logins stay off (-s) unless the ESP supplies rescue_password_hash.
     printf '%s\n' \
         "::respawn:/usr/sbin/dropbear -F -E $dropbear_pw -p 22 -P /run/dropbear.pid $dropbear_keys" \
-        'ttymxc0::askfirst:-/bin/sh' \
+        "$conf_rescue_console::askfirst:-/bin/sh" \
         '::ctrlaltdel:/bin/busybox reboot -f' \
         '::shutdown:/bin/busybox sync' >/etc/inittab
     emit rescue_ready "dropbear_22_failcount_$failcount"
     exec "$BB" init
+}
+
+# apply_fixup NAME : run one device-tree helper on $target_dtb.
+# Exit 0 = applied, 3 = does not apply to this device tree, anything else = failure.
+apply_fixup() {
+    fixup_n=$((fixup_n + 1))
+    fixup_out=/run/fixup-$fixup_n.dtb
+    case "$1" in
+        upper-ram) set -- "$1" /bin/percept-fdt-upper ;;
+        thermal) set -- "$1" /bin/percept-fdt-thermal ;;
+        media-gpu) set -- "$1" /bin/percept-fdt-media gpu ;;
+        media-gpu-vpu) set -- "$1" /bin/percept-fdt-media gpu-vpu ;;
+    esac
+    fixup_name=$1
+    fixup_helper=$2
+    $fixup_helper "$target_dtb" "$fixup_out" $3 >>/run/capture.log 2>&1
+    fixup_rc=$?
+    case "$fixup_rc" in
+        0) target_dtb=$fixup_out; emit dtb_fixup "applied_$fixup_name" ;;
+        3)
+            if [ "$conf_fixups_policy" = strict ]; then
+                rescue "fixup_inapplicable_$fixup_name"
+            fi
+            emit dtb_fixup "skipped_$fixup_name"
+            ;;
+        *) rescue "fixup_failed_${fixup_name}_status_$fixup_rc" ;;
+    esac
 }
 
 $BB mkdir -p /proc /sys /dev /run /esp /target /tmp /etc /root
@@ -380,12 +384,27 @@ $BB mount -t tmpfs -o mode=0755 tmpfs /run || printf '%s\n' 'percept-launcher: r
 read_identity
 local_log "init_entered kernel=$actual_release"
 
+stock_cmdline=$($BB cat /proc/cmdline)
 forced_rescue=0
-for word in $($BB cat /proc/cmdline); do
+for word in $stock_cmdline; do
     case "$word" in
         percept.mode=rescue) forced_rescue=1 ;;
     esac
 done
+
+# The ESP first: networking, devices and limits are all configured there.
+# GRUB may name it with percept.esp=UUID=... on the stock kernel's command line.
+if wait_for_spec "$(esp_spec "$stock_cmdline")" 15; then
+    ESP_DEVICE=$resolved
+    mount_esp rw || local_log "esp_mount_failed"
+else
+    local_log "esp_device_missing"
+fi
+if [ "$esp_mounted" = 1 ] && read_config "$CONF"; then
+    config_ok=1
+else
+    config_defaults
+fi
 
 # Telemetry for every path; kexec mode continues without it.
 network_up || local_log "continuing_without_network"
@@ -394,10 +413,18 @@ emit launcher_boot "kernel_${actual_release}_forced_rescue_$forced_rescue"
 if [ "$forced_rescue" = 1 ]; then
     rescue cmdline_rescue
 fi
-mount_esp rw || rescue esp_mount_failed
-read_config || rescue config_invalid
+[ "$esp_mounted" = 1 ] || rescue esp_mount_failed
+[ "$config_ok" = 1 ] || rescue config_invalid
 if [ "$conf_mode" = rescue ]; then
     rescue config_mode_rescue
+fi
+
+if [ -n "$conf_board_model" ]; then
+    board_model=$($BB tr -d '\000' </sys/firmware/devicetree/base/model 2>/dev/null)
+    case "$board_model" in
+        *"$conf_board_model"*) ;;
+        *) rescue "board_model_mismatch" ;;
+    esac
 fi
 
 failcount=0
@@ -408,52 +435,43 @@ if [ -e "$FAILCOUNT" ]; then
         ''|*[!0-9]*) rescue failcount_invalid ;;
     esac
 fi
-if [ "$failcount" -ge "$FAIL_LIMIT" ]; then
-    rescue "failcount_${failcount}_limit_$FAIL_LIMIT"
+if [ "$failcount" -ge "$conf_fail_limit" ]; then
+    rescue "failcount_${failcount}_limit_$conf_fail_limit"
 fi
 next=$((failcount + 1))
 printf '%s\n' "$next" >"$FAILCOUNT" || rescue failcount_write_failed
 $BB sync
 [ "$($BB cat "$FAILCOUNT")" = "$next" ] || rescue failcount_verify_failed
 failcount=$next
-emit failcount "attempt_${failcount}_of_$FAIL_LIMIT"
+emit failcount "attempt_${failcount}_of_$conf_fail_limit"
 unmount_esp || rescue esp_unmount_failed
 
-wait_for_block "$ROOT_DEVICE" 15 || rescue root_device_missing
+wait_for_spec "$(root_spec)" 15 || rescue root_device_missing
+ROOT_DEVICE=$resolved
 # A read-only block device also stops ext4 from replaying the journal.
 $BB blockdev --setro "$ROOT_DEVICE" || rescue root_setro_failed
-$BB mount -t ext4 -o ro,noload "$ROOT_DEVICE" "$ROOT" || rescue root_mount_failed
+$BB mount -t "$conf_root_fstype" -o "$conf_root_opts" "$ROOT_DEVICE" "$ROOT" || rescue root_mount_failed
 root_mounted=1
 [ -f "$ROOT$conf_kernel" ] || rescue kernel_missing
-[ -f "$ROOT$conf_initrd" ] || rescue initrd_missing
+[ -z "$conf_initrd" ] || [ -f "$ROOT$conf_initrd" ] || rescue initrd_missing
 check_hash "$ROOT$conf_kernel" "$conf_kernel_sha256" || rescue kernel_hash_mismatch
-check_hash "$ROOT$conf_initrd" "$conf_initrd_sha256" || rescue initrd_hash_mismatch
+[ -z "$conf_initrd" ] || check_hash "$ROOT$conf_initrd" "$conf_initrd_sha256" || rescue initrd_hash_mismatch
 [ -r /sys/firmware/fdt ] || rescue fdt_missing
 target_dtb=/sys/firmware/fdt
-if [ "$conf_upper_ram" = 1 ]; then
-    /bin/percept-fdt-upper /sys/firmware/fdt /run/upper-ram.dtb >>/run/capture.log 2>&1 || rescue upper_ram_dtb_failed
-    target_dtb=/run/upper-ram.dtb
-    emit upper_ram_dtb prepared_4GiB
-fi
-if [ "$conf_thermal_fix" = 1 ]; then
-    /bin/percept-fdt-thermal "$target_dtb" /run/thermal.dtb >>/run/capture.log 2>&1 || rescue thermal_dtb_failed
-    target_dtb=/run/thermal.dtb
-    emit thermal_dtb sensor_cells_1
-fi
-if [ "$conf_media" != none ]; then
-    /bin/percept-fdt-media "$target_dtb" /run/media.dtb "$conf_media" >>/run/capture.log 2>&1 || rescue media_dtb_failed
-    target_dtb=/run/media.dtb
-    emit media_dtb "$conf_media"
-fi
-if [ "$conf_cpu_profile" != unchanged ]; then
-    /bin/percept-fdt-cpu "$target_dtb" /run/cpu.dtb "$conf_cpu_profile" >>/run/capture.log 2>&1 || rescue cpu_dtb_failed
-    target_dtb=/run/cpu.dtb
-    emit cpu_dtb "$conf_cpu_profile"
-fi
+fixup_n=0
+oldifs=$IFS
+IFS=,
+set -- $conf_fixups
+IFS=$oldifs
+for fixup in "$@"; do
+    apply_fixup "$fixup"
+done
+
 emit capture_begin "${conf_kernel##*/}"
+set -- -c -l "$ROOT$conf_kernel" --append="$conf_cmdline" --dtb="$target_dtb"
+[ -z "$conf_initrd" ] || set -- "$@" --initrd="$ROOT$conf_initrd"
 $BB timeout -k 2 60 "$BB" env LD_PRELOAD="$CAPTURE" KEXEC_BUNDLE="$BUNDLE" \
-    "$KEXEC" -c -l "$ROOT$conf_kernel" --initrd="$ROOT$conf_initrd" \
-    --append="$conf_cmdline" --dtb="$target_dtb" >>/run/capture.log 2>&1
+    "$KEXEC" "$@" >>/run/capture.log 2>&1
 result=$?
 emit capture_end "status_$result"
 [ "$result" = 0 ] && [ -s "$BUNDLE" ] || rescue capture_failed

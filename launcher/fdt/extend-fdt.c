@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Extend only the known Percept memory bank; retain all other live FDT bytes. */
+/* Extend only the known Percept memory bank; retain all other live FDT bytes.
+ * Exit status: 0 applied, 3 not applicable (already 4 GiB), 1 anything else. */
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <fcntl.h>
@@ -33,6 +34,10 @@ int main(int argc, char **argv)
     static const unsigned char expected[16] = {
         0,0,0,0, 0x40,0,0,0, 0,0,0,0, 0xc0,0,0,0
     };
+    static const unsigned char extended[16] = {
+        0,0,0,0, 0x40,0,0,0, 0,0,0,1, 0,0,0,0
+    };
+    int already = 0;
     if (argc != 3) fail("usage: extend-fdt INPUT OUTPUT");
     data=malloc(capacity);
     if (!data) fail("allocation failed");
@@ -79,7 +84,9 @@ int main(int argc, char **argv)
             if (depth==0 && !strcmp(name,"#size-cells") && length==4)
                 size_cells=be32(data+pos);
             if (depth==1 && memory_depth==depth && !strcmp(name,"reg")) {
-                if (length!=16 || memcmp(data+pos,expected,16)) fail("unexpected memory bank");
+                if (length!=16) fail("unexpected memory bank");
+                if (!memcmp(data+pos,extended,16)) already=1;
+                else if (memcmp(data+pos,expected,16)) fail("unexpected memory bank");
                 reg=pos; regs++;
             }
             if (depth==1 && chosen_depth==depth && !strcmp(name,"linux,uefi-secure-boot"))
@@ -96,6 +103,10 @@ int main(int argc, char **argv)
     if (!finished || memories!=1 || regs!=1 || addr_cells!=2 || size_cells!=2)
         fail("unexpected memory layout");
     if (secure_boot) fail("complete EFI handover requires a separate memory-map extension");
+    if (already) {
+        fprintf(stderr, "percept-upper-ram: memory bank is already 4 GiB; nothing to do\n");
+        return 3;
+    }
     /* reg = <0 0x40000000 1 0>: [0x40000000, 0x140000000). */
     data[reg+11]=1;
     data[reg+12]=0;

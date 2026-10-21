@@ -11,7 +11,7 @@ import re
 CURRENT_KEYS = ("mode", "kernel", "initrd", "cmdline", "kernel_sha256", "initrd_sha256",
                 "upper_ram", "thermal_fix", "media", "cpu_profile")
 V2_KEYS = CURRENT_KEYS + (
-    "profile", "esp", "root", "root_fstype", "root_opts", "kernel_format",
+    "profile", "root", "root_fstype", "root_opts", "kernel_format", "board_model",
     "net_mode", "net_if", "net_ip", "net_prefix", "net_gw",
     "log_receiver_ip", "log_receiver_port", "fail_limit", "rescue_console",
     "dtb_fixups", "dtb_fixups_policy",
@@ -79,6 +79,8 @@ def parse(text, compat="current"):
     mode = out.get("mode", "kexec")
     if mode not in ("kexec", "rescue"):
         raise LauncherConfError("invalid mode")
+    if compat != "current":
+        _check_v2(out)
     if mode == "kexec":
         for key in ("kernel", "initrd"):
             if key in out and not PATH_RE.match(out[key]):
@@ -90,7 +92,51 @@ def parse(text, compat="current"):
         for key in ("upper_ram", "thermal_fix"):
             if out.get(key, "0") not in ("0", "1"):
                 raise LauncherConfError("invalid " + key)
+        if compat != "current":
+            legacy = [k for k in ("upper_ram", "thermal_fix", "media") if k in out]
+            if legacy and "dtb_fixups" in out:
+                raise LauncherConfError("legacy fixup keys mixed with dtb_fixups")
     return out
+
+
+def _check_v2(out):
+    """Value rules of the v2 keys; must stay in step with launcher/lib/percept-config.sh."""
+    import ipaddress
+
+    def ip(key):
+        try:
+            ipaddress.IPv4Address(out[key])
+        except ValueError:
+            raise LauncherConfError("invalid " + key) from None
+
+    def num(key, lo, hi):
+        if not out[key].isdigit() or not lo <= int(out[key]) <= hi:
+            raise LauncherConfError("invalid " + key)
+
+    if out.get("net_mode", "dhcp") not in ("dhcp", "static", "none"):
+        raise LauncherConfError("invalid net_mode")
+    if out.get("net_mode") == "static":
+        for key in ("net_ip", "net_prefix"):
+            if key not in out:
+                raise LauncherConfError("static net_mode needs " + key)
+    for key in ("net_ip", "net_gw", "log_receiver_ip"):
+        if out.get(key):
+            ip(key)
+    if "net_prefix" in out:
+        num("net_prefix", 1, 30)
+    if "log_receiver_port" in out:
+        num("log_receiver_port", 1, 65535)
+    if "fail_limit" in out:
+        num("fail_limit", 1, 10)
+    if out.get("dtb_fixups_policy", "skip-inapplicable") not in ("skip-inapplicable", "strict"):
+        raise LauncherConfError("invalid dtb_fixups_policy")
+    for name in filter(None, out.get("dtb_fixups", "").split(",")):
+        if name not in ("upper-ram", "thermal", "media-gpu", "media-gpu-vpu"):
+            raise LauncherConfError("invalid dtb_fixups entry")
+    if out.get("profile", "percept-dk") != "percept-dk":
+        raise LauncherConfError("invalid profile")
+    if out.get("kernel_format", "auto") not in ("auto", "Image", "Image.gz"):
+        raise LauncherConfError("invalid kernel_format")
 
 
 def grubenv(tries):

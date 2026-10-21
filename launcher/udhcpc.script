@@ -1,0 +1,17 @@
+#!/bin/busybox sh
+# SPDX-License-Identifier: MIT
+# udhcpc hook for the launcher's rescue network: address and default route only.
+BB=/bin/busybox
+case "$1" in
+    bound|renew)
+        $BB ip addr flush dev "$interface" 2>/dev/null
+        $BB ip addr add "$ip/$mask" dev "$interface" || exit 1
+        for gateway in $router; do
+            $BB ip route add default via "$gateway" dev "$interface" && break
+        done
+        ;;
+    deconfig)
+        $BB ip addr flush dev "$interface" 2>/dev/null
+        ;;
+esac
+exit 0

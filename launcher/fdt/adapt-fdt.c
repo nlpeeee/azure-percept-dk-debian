@@ -11,6 +11,8 @@
 #include <libfdt.h>
 
 static void die(const char *s) { fprintf(stderr,"percept-media: %s\n",s); exit(1); }
+/* Exit status 3 tells the launcher this device tree does not need the fixup. */
+static void not_applicable(const char *s) { fprintf(stderr,"percept-media: %s\n",s); exit(3); }
 static void check(int e) { if (e<0) die(fdt_strerror(e)); }
 static int node(const void *f,const char *p)
 { int n=fdt_path_offset(f,p); check(n); return n; }
@@ -70,7 +72,7 @@ static void gpu(void *f)
 static void addnode(void *f,const char *name)
 {
     char path[128]; snprintf(path,sizeof(path),"/soc@0/%s",name);
-    if(fdt_path_offset(f,path)!=-FDT_ERR_NOTFOUND) die("media node already exists");
+    if(fdt_path_offset(f,path)!=-FDT_ERR_NOTFOUND) not_applicable("media node already exists; device tree already has mainline media nodes");
     check(fdt_add_subnode(f,node(f,"/soc@0"),name));
 }
 

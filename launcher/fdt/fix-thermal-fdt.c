@@ -104,6 +104,10 @@ int main(int argc, char **argv)
     }
     if (!done || cells!=1 || compatible!=1 || reg!=1 || little!=1 || range!=1 || cal!=1 ||
         !phandle || sensor!=1 || consumer!=phandle || consumer_id!=0) fail("TMU/CPU binding preconditions failed");
+    if (be32(data+patch)==1) {
+        fprintf(stderr, "percept-thermal: #thermal-sensor-cells is already 1; nothing to do\n");
+        return 3;
+    }
     data[patch+3]=1;
     out=open(argv[2],O_WRONLY|O_CREAT|O_EXCL,0644);
     if (out<0) fail("cannot create output (must not exist)");

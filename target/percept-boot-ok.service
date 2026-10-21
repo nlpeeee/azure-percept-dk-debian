@@ -8,7 +8,7 @@ After=ssh.service
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/sh -c 'i=0; while [ $i -lt 90 ]; do ss -ltn | grep -q ":22 " && exit 0; i=$((i+1)); sleep 1; done; echo "sshd not listening after 90 s" >&2; exit 1'
+ExecStartPre=/usr/local/sbin/percept-wait-ssh
 ExecStartPre=/bin/sleep 15
 ExecStart=/usr/local/sbin/percept-boot-ok
 

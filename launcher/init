@@ -269,11 +269,20 @@ rescue() {
     $BB cat /etc/percept-launcher/authorized_keys >/root/.ssh/authorized_keys 2>/dev/null
     host_key=
     rescue_hash=
+    rescue_user=root
     if mount_esp ro; then
         if [ -s "$ESP/percept/authorized_keys" ]; then
             $BB cat "$ESP/percept/authorized_keys" >>/root/.ssh/authorized_keys
         fi
-        # Optional password login for rescue (root): a $6$ SHA-512 crypt hash, one line.
+        if [ -s "$ESP/percept/rescue_username" ]; then
+            candidate=$($BB head -n 1 "$ESP/percept/rescue_username")
+            candidate=${candidate%"$cr"}
+            case "$candidate" in
+                ''|*[!a-z0-9_-]*|[0-9-]*) local_log rescue_username_ignored ;;
+                *) rescue_user=$candidate ;;
+            esac
+        fi
+        # Optional password login for rescue: a $6$ SHA-512 crypt hash, one line.
         if [ -s "$ESP/percept/rescue_password_hash" ]; then
             rescue_hash=$($BB head -n 1 "$ESP/percept/rescue_password_hash")
             rescue_hash=${rescue_hash%"$cr"}
@@ -300,11 +309,14 @@ rescue() {
     network_up || local_log "rescue_without_network"
     $BB --install -s
     printf '%s\n' 'root:x:0:0:root:/root:/bin/sh' >/etc/passwd
+    [ "$rescue_user" = root ] || printf '%s\n' "$rescue_user:x:0:0:Recovery administrator:/root:/bin/sh" >>/etc/passwd
     if [ -n "$rescue_hash" ]; then
-        printf '%s\n' "root:$rescue_hash:19000:0:99999:7:::" >/etc/shadow
+        printf '%s\n' "$rescue_user:$rescue_hash:19000:0:99999:7:::" >/etc/shadow
+        [ "$rescue_user" = root ] || printf '%s\n' 'root:*:19000:0:99999:7:::' >>/etc/shadow
         dropbear_pw=
     else
-        printf '%s\n' 'root:*:19000:0:99999:7:::' >/etc/shadow
+        printf '%s\n' "$rescue_user:*:19000:0:99999:7:::" >/etc/shadow
+        [ "$rescue_user" = root ] || printf '%s\n' 'root:*:19000:0:99999:7:::' >>/etc/shadow
         dropbear_pw=-s
     fi
     printf '%s\n' 'root:x:0:' >/etc/group
@@ -320,6 +332,17 @@ rescue() {
     else
         dropbear_keys=-R
     fi
+    # Persist an independently generated recovery host key across rescue boots.
+    if [ -z "$host_key" ]; then
+        if /usr/bin/dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1; then
+            host_key=/etc/dropbear/dropbear_ed25519_host_key
+            if mount_esp rw; then
+                $BB cp "$host_key" "$ESP/percept/dropbear_ed25519_host_key" || local_log rescue_host_key_save_failed
+                unmount_esp || local_log esp_unmount_failed
+            fi
+        fi
+    fi
+    if [ -n "$host_key" ]; then dropbear_keys="-r $host_key"; fi
     # Password logins stay off (-s) unless the ESP supplies rescue_password_hash.
     printf '%s\n' \
         "::respawn:/usr/sbin/dropbear -F -E $dropbear_pw -p 22 -P /run/dropbear.pid $dropbear_keys" \

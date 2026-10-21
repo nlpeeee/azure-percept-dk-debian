@@ -166,7 +166,7 @@ def rescue_esp_files(cfg):
     (a generated password is filled in by the build step).
     """
     r = cfg["rescue"]
-    files = {}
+    files = {"rescue_username": (r.get("username", "root") + "\n").encode("ascii")}
     if r["authorized_keys"]:
         files["authorized_keys"] = ("\n".join(r["authorized_keys"]) + "\n").encode("ascii")
     if r["password_auth"] and r.get("password_hash"):

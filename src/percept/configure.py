@@ -81,7 +81,7 @@ def pick_ssh_key(pr, name, home=None, keygen=shutil.which("ssh-keygen"), allow_s
         choice = pr.ask("Which key should be allowed to log in", "1" if keys else "p")
     else:
         pr.out("No SSH public key found in ~/.ssh.")
-        choice = pr.ask("Paste a public key (p) or generate a new one (g)", "g" if keygen else "p")
+        choice = pr.ask("Paste a public key (p), generate one (g)" + (", or skip for password login (s)" if allow_skip else ""), "s" if allow_skip else "g" if keygen else "p")
     if choice == "s" and allow_skip:
         return None
     if choice.isdigit() and 1 <= int(choice) <= len(keys):
@@ -175,7 +175,17 @@ def run_wizard(pr, home=None, defaults_name=None):
             r["gateway"] = gw
     if rescue_pw:
         r["password_auth"] = True
+    r["username"] = pr.ask("Recovery SSH user name (administrator)", "root",
+        lambda v: None if validate.USER_RE.fullmatch(v) and (v == "root" or v not in validate.RESERVED_USERS) else "invalid or reserved user name")
+    if pr.yes("Use a separate recovery password", False):
+        while True:
+            value = pr.ask("Recovery password", None, lambda v: None if len(v)>=8 else "use at least 8 characters", secret=True)
+            if value == pr.ask("Repeat recovery password", None, secret=True): break
+            pr.out("  ! passwords differ")
+        r["password_auth"] = True
+        r["password_hash"] = sha512crypt.crypt(value)
     cfg["rescue"] = r
+    cfg["os"] = {"cpu_profile": pr.choose("CPU profile: unchanged, rated 800/1300 MHz, experimental oc1500", ["unchanged", "rated", "oc1500"], "unchanged")}
 
     # --- install ---------------------------------------------------------
     method = pr.choose("How will you install: uuu = flash a new image over USB, ssh = convert a board that already runs Linux",

@@ -17,11 +17,11 @@ from pathlib import Path
 import struct
 import sys
 
-sys.dont_write_bytecode = True
-ROOT = Path(__file__).absolute().parents[1]
-SPEC = importlib.util.spec_from_file_location("percept_prepare_dtb", ROOT / "tools/prepare_percept_dtb.py")
-PREP = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(PREP)
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "launcher/fdt/cpu"))
+import fdt_contract as PREP
+PREP.sha = PREP.digest
+PREP.raw = lambda nodes, path, prop: nodes[path][prop][0]
 
 
 def main():

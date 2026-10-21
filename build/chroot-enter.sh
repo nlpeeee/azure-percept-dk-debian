@@ -16,7 +16,9 @@ for b in ${BINDS:-}; do
     mount --bind "$src" "$root$dst"
     [ "$mode" = ro ] && mount -o remount,bind,ro "$root$dst"
 done
-[ -e "$root/etc/resolv.conf" ] || : > "$root/etc/resolv.conf"
-mount --bind /etc/resolv.conf "$root/etc/resolv.conf" 2>/dev/null || true
+if [ "${PERCEPT_BIND_RESOLV:-1}" = 1 ]; then
+    [ -e "$root/etc/resolv.conf" ] || : > "$root/etc/resolv.conf"
+    mount --bind /etc/resolv.conf "$root/etc/resolv.conf" 2>/dev/null || true
+fi
 exec chroot "$root" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     HOME=/root TERM=dumb LC_ALL=C DEBIAN_FRONTEND=noninteractive "${envs[@]}" "$@"

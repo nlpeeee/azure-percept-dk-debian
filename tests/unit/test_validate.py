@@ -152,7 +152,7 @@ class Network(unittest.TestCase):
         self.assertTrue(errs(check(self.wifi(country=None)), "country"))
         self.assertTrue(errs(check(self.wifi(ssid="x" * 33)), "ssid"))
         self.assertEqual(check(self.wifi(security="open", psk=None)).errors, [])
-        self.assertTrue(errs(check(self.wifi(psk="café-passphrase")), "ASCII"))
+        self.assertTrue(errs(check(self.wifi(psk="cafÃƒÂ©-passphrase")), "ASCII"))
 
     def test_wifi_disabled_warns(self):
         r = check(self.wifi(enabled=False))
@@ -284,10 +284,10 @@ class PasswordLogin(unittest.TestCase):
         from percept import launcher_conf
         r = check(self.pw_cfg(password_auth=True))
         files = launcher_conf.rescue_esp_files(r.config)
-        self.assertEqual(set(files), {"rescue_password_hash"})
+        self.assertEqual(set(files), {"rescue_password_hash", "rescue_username"})
         self.assertTrue(files["rescue_password_hash"].startswith(b"$6$"))
         r = check(helpers.minimal_cfg())
-        self.assertEqual(set(launcher_conf.rescue_esp_files(r.config)), {"authorized_keys"})
+        self.assertEqual(set(launcher_conf.rescue_esp_files(r.config)), {"authorized_keys", "rescue_username"})
 
 
 class LauncherInitSupportsRescuePassword(unittest.TestCase):

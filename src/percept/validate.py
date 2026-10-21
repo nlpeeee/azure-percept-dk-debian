@@ -322,6 +322,8 @@ def validate(cfg, base_dir=".", env=None):
 
     # --- rescue ----------------------------------------------------------------
     r = c["rescue"]
+    if not USER_RE.fullmatch(r["username"]) or (r["username"] in RESERVED_USERS and r["username"] != "root"):
+        res.err("rescue.username", "invalid or reserved recovery login name")
     if not r["enabled"]:
         res.warn("rescue.enabled", "rescue disabled: a bad boot will need USB recovery")
     if r["net_mode"] not in CHOICES["rescue.net_mode"]:

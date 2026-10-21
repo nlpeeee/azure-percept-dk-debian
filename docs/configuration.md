@@ -84,6 +84,7 @@ Examples: [`examples/board.minimal.toml`](../examples/board.minimal.toml),
 
 | Setting | Type | Default | Secret | Meaning |
 |---|---|---|---|---|
+| `username` | str | `root` |  | SSH recovery login name; recovery accounts have administrator UID 0. |
 | `enabled` | bool | `true` |  | Keep the SSH rescue mode (recommended). Keys by default; passwords if `password_auth` is on. |
 | `net_mode` | str | `dhcp` |  | `dhcp` or `static`. Static is easier to find when something is wrong. |
 | `address` | str | (none) |  | Rescue IPv4 address (static only). |

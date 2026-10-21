@@ -47,6 +47,7 @@ FIELDS = [
     Field("network.wifi.security", "str", "wpa2", False, "`wpa2`, `wpa3` or `open`."),
     Field("network.wifi.hidden", "bool", False, False, "Network does not broadcast its SSID."),
 
+    Field("rescue.username", "str", "root", False, "SSH recovery login name; recovery accounts have administrator UID 0."),
     Field("rescue.enabled", "bool", True, False, "Keep the SSH rescue mode (recommended). Keys by default; passwords if `password_auth` is on."),
     Field("rescue.net_mode", "str", "dhcp", False, "`dhcp` or `static`. Static is easier to find when something is wrong."),
     Field("rescue.address", "str", None, False, "Rescue IPv4 address (static only)."),

@@ -53,6 +53,7 @@ def wizard_answers(key_choice="p"):
         "static", "192.168.50.20", "24", "192.168.50.1", "",   # ethernet (dns default = gateway)
         "y", "HomeNet", "wpa2", CANARY_PSK, "gb", "n",          # wifi
         "static", "192.168.50.21", "24", "",                    # rescue
+        "root", "n", "unchanged",
         "uuu",
     ]
 
@@ -167,7 +168,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(rc, 0, out)
 
     def test_planned_commands_say_so(self):
-        rc, out = run_cli(self.root, "build")
+        rc, out = run_cli(self.root, "flash")
         self.assertEqual(rc, 2)
         self.assertIn("not implemented yet", out)
 

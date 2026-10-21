@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MIT
+[Unit]
+Description=Expand Debian root to available eMMC space
+After=local-fs.target
+ConditionPathExists=!/var/lib/percept/grown
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/percept-firstboot-grow
+[Install]
+WantedBy=multi-user.target

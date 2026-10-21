@@ -1,0 +1,17 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+set -eu
+root=$(findmnt -n -o SOURCE /)
+name=${root##*/}
+part=$(cat "/sys/class/block/$name/partition")
+parent=$(lsblk -n -o PKNAME "$root" | head -1)
+disk=/dev/$parent
+sgdisk -e "$disk"
+if message=$(growpart "$disk" "$part" 2>&1); then
+    printf '%s\n' "$message"
+else
+    case "$message" in *NOCHANGE*) ;; *) printf '%s\n' "$message" >&2; exit 1 ;; esac
+fi
+resize2fs "$root"
+mkdir -p /var/lib/percept
+touch /var/lib/percept/grown

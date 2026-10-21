@@ -8,14 +8,14 @@ built in.
 > **Status: work in progress.** The boot method below is proven on one board.
 > The turnkey `percept` installer is being built in the open: today it can
 > check your PC (`doctor`), collect and validate your per-board settings
-> (`configure`) and validate OS profiles. Image building and flashing are the
-> next milestones - see [Roadmap](#roadmap). Nothing here is affiliated with
+> (`configure`) and validate OS profiles. Source image building is implemented and being validated; flashing remains
+> the next milestone - see [Roadmap](#roadmap). Nothing here is affiliated with
 > or endorsed by Microsoft.
 
 ## How it works
 
 The DK's firmware only boots a Microsoft-signed chain
-(UEFI → shim → GRUB → Microsoft's Linux 5.4.3). Instead of fighting that, this
+(UEFI â†’ shim â†’ GRUB â†’ Microsoft's Linux 5.4.3). Instead of fighting that, this
 project keeps the signed chain and uses the stock kernel only as a *launcher*:
 
 1. GRUB boots Microsoft's kernel with a small initramfs (the *launcher*) from
@@ -36,7 +36,7 @@ switches and the firmware device tree is adapted at boot. Details:
 
 | Works | Not working / left alone |
 |---|---|
-| 4 GiB RAM; CPU/PMIC scaling at 800–1300 MHz, optional experimental 1500 MHz | Deep idle states (workaround retained) |
+| 4 GiB RAM; CPU/PMIC scaling at 800â€“1300 MHz, optional experimental 1500 MHz | Deep idle states (workaround retained) |
 | Vivante GPU (etnaviv, GLES verified) | External RTC, AK audio codec |
 | Hantro G1/G2 video decode (H.264, VP8, MPEG-2, HEVC, VP9, bit-exact) | Ethernet FEC (unused on this board) |
 | USB-C port (host mode only), USB 3 | USB-C device/peripheral mode |
@@ -62,8 +62,9 @@ python percept doctor        # what is missing on this PC, with exact fix comman
 python percept configure     # asks for SSH key, Wi-Fi, network, hostname; writes boards/<name>/
 ```
 
-`percept build`, `percept flash` and `percept install-over-ssh` land with the
-next milestones. Until then the proven manual procedure is in
+`percept fetch` and `percept build --board NAME --target image` now run on
+WSL/Linux. See [WSL build instructions](docs/build-wsl.md). `percept flash` and
+`percept install-over-ssh` remain forthcoming. Until then the proven manual procedure is in
 [docs/legacy/trixie-install-lab.md](docs/legacy/trixie-install-lab.md) (written
 for the first board; expect board-specific values).
 

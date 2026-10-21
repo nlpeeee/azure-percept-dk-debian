@@ -50,7 +50,10 @@ p = json.load(sys.stdin)['partitiontable']['partitions'][$1]
 print(p['start'] * 512, p['size'] * 512)"
 }
 read -r o1 _ < <(part 0)
+read -r o2 s2 < <(part 1)
 read -r o3 _ < <(part 2)
+dd if="$raw" of="$dest/platform-prefix.bin" bs=512 count=$((o1 / 512)) status=none
+dd if="$raw" of="$dest/secondary-esp.img" bs=512 skip=$((o2 / 512)) count=$((s2 / 512)) status=none
 
 say "EFI partition"
 mkdir -p "$dest/efi"

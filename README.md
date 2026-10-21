@@ -36,12 +36,15 @@ switches and the firmware device tree is adapted at boot. Details:
 
 | Works | Not working / left alone |
 |---|---|
-| 4 GiB RAM, 4 Cortex-A53 at 1.3 GHz | CPU frequency scaling, PMIC, deep idle states |
+| 4 GiB RAM; CPU/PMIC scaling at 800–1300 MHz, optional experimental 1500 MHz | Deep idle states (workaround retained) |
 | Vivante GPU (etnaviv, GLES verified) | External RTC, AK audio codec |
 | Hantro G1/G2 video decode (H.264, VP8, MPEG-2, HEVC, VP9, bit-exact) | Ethernet FEC (unused on this board) |
 | USB-C port (host mode only), USB 3 | USB-C device/peripheral mode |
 | Gigabit Ethernet, Wi-Fi (rtw88), Bluetooth, thermal sensor, TPM | |
 | Vision camera via Microsoft's extracted runtime ([docs/camera.md](docs/camera.md)) | Detector accuracy not validated |
+
+CPU power-management sources and installer hooks are integrated; select `os.cpu_profile`
+for future builds: [docs/cpu-power-management.md](docs/cpu-power-management.md).
 
 Only Debian 6.12.113 is tested. Other kernels may work if they meet the
 [kernel contract](docs/profiles.md); treat them as experimental. Board 2 has not

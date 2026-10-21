@@ -1,0 +1,20 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Install as /etc/initramfs-tools/hooks/percept-cpu (0755).
+set -eu
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in prereqs) prereqs; exit 0 ;; esac
+. /usr/share/initramfs-tools/hook-functions
+manual_add_modules cpufreq_powersave
+manual_add_modules imx_cpufreq_dt
+manual_add_modules cpufreq_dt
+copy_exec /sbin/modprobe /sbin
+mkdir -p "$DESTDIR/lib/percept" "$DESTDIR/etc/modprobe.d" "$DESTDIR/etc/percept-cpu"
+cp /usr/lib/percept/cpufreq-load-guard "$DESTDIR/lib/percept/cpufreq-load-guard"
+chmod 755 "$DESTDIR/lib/percept/cpufreq-load-guard"
+cp /etc/modprobe.d/percept-cpu.conf "$DESTDIR/etc/modprobe.d/percept-cpu.conf"
+# Opt-in deliberately absent unless voltage/identity review approved it.
+if [ -f /etc/percept-cpu/enable-cpufreq ]; then
+    cp /etc/percept-cpu/enable-cpufreq "$DESTDIR/etc/percept-cpu/enable-cpufreq"
+fi

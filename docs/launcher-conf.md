@@ -20,7 +20,8 @@ prints what a board would get (`--compat v2` for the planned key set).
 | `upper_ram` | `0`/`1` | expose the fourth GiB |
 | `thermal_fix` | `0`/`1` | TMU sensor-cells fix |
 | `media` | `none`, `gpu`, `gpu-vpu` | GPU / VPU device-tree enablement |
-| `cpu_profile` | `unchanged`, `rated`, `oc1500` | CPU clock profile (leave at `unchanged`) |
+| `cpu_profile` | `unchanged` (default), `rated`, `oc1500` | CPU OPP profile; non-default needs PMIC and target runtime setup |
+| `cpu_pmic` | `0` (default), `1` | Convert PMIC binding and connect CPUs to BUCK2; required for scaling |
 
 ## Keys planned for launcher v2 (milestone M4)
 
@@ -51,3 +52,7 @@ the launcher will accept them in M4.
 | `percept/authorized_keys` | rescue-mode SSH keys |
 | `percept/rescue_password_hash` | optional one-line `$6$` hash; if present, rescue mode also accepts the `root` password (dropbear password login is otherwise off) |
 | `boot/grub2/grubenv` | exactly 1024 bytes; `percept_tries` counts down from 4 in GRUB, reset by `percept-boot-ok` |
+
+CPU profiles are integrated in the launcher build. Generate these keys from
+`os.cpu_profile`; see [CPU power management](cpu-power-management.md) for the
+matching rootfs hook, governor ordering, qualification and rollback.

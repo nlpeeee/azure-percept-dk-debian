@@ -9,7 +9,7 @@ including rejecting unknown keys, so generated files are checked against it.
 import re
 
 CURRENT_KEYS = ("mode", "kernel", "initrd", "cmdline", "kernel_sha256", "initrd_sha256",
-                "upper_ram", "thermal_fix", "media", "cpu_profile")
+                "upper_ram", "thermal_fix", "media", "cpu_profile", "cpu_pmic")
 V2_KEYS = CURRENT_KEYS + (
     "profile", "root", "root_fstype", "root_opts", "kernel_format", "board_model",
     "net_mode", "net_if", "net_ip", "net_prefix", "net_gw",
@@ -36,6 +36,9 @@ def render(resolved, cfg, compat="current"):
         lines += ["dtb_fixups=" + ",".join(f), "dtb_fixups_policy=skip-inapplicable"]
         lines += rescue_network_lines(cfg)
         lines.append("fail_limit=%d" % cfg["rescue"]["fail_limit"])
+    cpu_profile = resolved.get("cpu_profile", "unchanged")
+    if cpu_profile != "unchanged":
+        lines += ["cpu_pmic=1", "cpu_profile=" + cpu_profile]
     lines.append("cmdline=" + resolved["cmdline"])
     text = "\n".join(lines) + "\n"
     parse(text, compat)  # never emit something the launcher would reject
@@ -89,9 +92,18 @@ def parse(text, compat="current"):
             raise LauncherConfError("invalid or empty cmdline")
         if out.get("media", "none") not in ("none", "gpu", "gpu-vpu"):
             raise LauncherConfError("invalid media")
-        for key in ("upper_ram", "thermal_fix"):
+        for key in ("upper_ram", "thermal_fix", "cpu_pmic"):
             if out.get(key, "0") not in ("0", "1"):
                 raise LauncherConfError("invalid " + key)
+        cpu_profile = out.get("cpu_profile", "unchanged")
+        if cpu_profile not in ("unchanged", "rated", "oc1500"):
+            raise LauncherConfError("invalid cpu_profile")
+        if cpu_profile != "unchanged":
+            if out.get("cpu_pmic", "0") != "1":
+                raise LauncherConfError("cpu_profile requires cpu_pmic=1")
+            governors = [w for w in out["cmdline"].split() if w.startswith("cpufreq.default_governor=")]
+            if governors != ["cpufreq.default_governor=powersave"]:
+                raise LauncherConfError("cpu_profile requires exactly one powersave default")
         if compat != "current":
             legacy = [k for k in ("upper_ram", "thermal_fix", "media") if k in out]
             if legacy and "dtb_fixups" in out:

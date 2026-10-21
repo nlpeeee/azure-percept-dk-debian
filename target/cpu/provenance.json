@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-21",
+  "tested_kernel": "6.12.113+deb13-arm64",
+  "source_bundle_sha256": "5ba6dd05b98369c1644592e5d25655192e0dbd5df9faacd4d71181b00ead29d8",
+  "kernel_patches": false,
+  "files": [
+    {
+      "path": "launcher/fdt/adapt-cpu-fdt.c",
+      "sha256": "cc3711e4771c4e049c6c4553c81a0205d6462317f5820ea07a454546d58444d9"
+    },
+    {
+      "path": "launcher/fdt/adapt-pmic-fdt.c",
+      "sha256": "e8c54e48f4cfc63b3f0be9dfbb1190cab399862955b31523a3ef930cd2342613"
+    },
+    {
+      "path": "target/cpu/cpu-policy.sh",
+      "sha256": "ec746dc456a767dc21fcb29f52d74a6192570ae36fdbe8855c7077cd9e790978"
+    },
+    {
+      "path": "target/cpu/cpufreq-load-guard",
+      "sha256": "f83613555683c98f84d107494c1e176d23a105731f2e2deade3f0d56df208d02"
+    },
+    {
+      "path": "target/cpu/init-top-cpu",
+      "sha256": "26456823037ad987bbd0413a7c3bddcf0c982bc283bb15ed189c68af92d382ff"
+    },
+    {
+      "path": "target/cpu/initramfs-hook",
+      "sha256": "9240f1cb95a54083598d47fbe5013a0fa5b1644cc21e2176d401ce71c81cf3b6"
+    },
+    {
+      "path": "target/cpu/percept-cpu.conf",
+      "sha256": "ab129ba961af12cc68fe11c3056f8cc68e1e38c2d7872426f8489885b10e2d98"
+    },
+    {
+      "path": "target/cpu/percept-cpu-policy.service",
+      "sha256": "f0037ad4b78ec2fba231c549c39294240fe35a1d2d5b9e240fe428b517376ffd"
+    },
+    {
+      "path": "target/cpu/test-guard.py",
+      "sha256": "a76733e95e48f5b537d0f591c330da7ae6c4bd8f098fc10b7a00f8efbbc432c4"
+    },
+    {
+      "path": "target/cpu/test-policy.py",
+      "sha256": "75ead67b0b397926094582453a919697e9dacdf45b109cd2929c5048166d6bc7"
+    },
+    {
+      "path": "target/cpu/stage.py",
+      "sha256": "622ef4bf6e9e3dc99b880f9193222a2441fa177bc4d6dc7d6edea94de266932e"
+    }
+  ]
+}

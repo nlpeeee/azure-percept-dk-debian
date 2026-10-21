@@ -42,6 +42,7 @@ gateway = "192.168.50.1"
 
 [os]
 profile = "debian-trixie"
+cpu_profile = "unchanged"       # rated = 800/1300; oc1500 = experimental 800/1300/1500 MHz
 
 [os.kernel]
 source = "distro"

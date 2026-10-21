@@ -1,0 +1,23 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Install as /etc/initramfs-tools/scripts/init-top/00-percept-cpu (0755).
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in prereqs) prereqs; exit 0 ;; esac
+# initramfs-tools exports -qb; -b would suppress our explicit blacklisted loads.
+unset MODPROBE_OPTIONS
+# modprobe install guards apply even if an earlier alias requests either driver.
+# A failure leaves both guarded; it must never select the compiled schedutil default.
+if ! /sbin/modprobe cpufreq_powersave || [ ! -d /sys/module/cpufreq_powersave ]; then
+    echo "percept-cpu: powersave unavailable; CPUfreq remains guarded" >&2
+    exit 0
+fi
+if ! /sbin/modprobe imx_cpufreq_dt; then
+    echo "percept-cpu: CPUfreq activation gated or failed" >&2
+    exit 0
+fi
+# Alias autoload is blacklisted; load generic driver explicitly after wrapper.
+if ! /sbin/modprobe cpufreq_dt; then
+    echo "percept-cpu: generic CPUfreq activation gated or failed" >&2
+fi
+exit 0

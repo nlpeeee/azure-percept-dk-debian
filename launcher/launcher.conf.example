@@ -31,3 +31,6 @@ cmdline=console=ttymxc0,115200 earlycon=ec_imx6q,0x30860000 ignore_loglevel init
 # rated preserves fuse masks (this unit: 800/1300 MHz).
 # oc1500 changes only the 1500 MHz mask <8 3> to <4 4>; overclock.
 cpu_profile=unchanged
+cpu_pmic=0
+# For scaling use cpu_pmic=1, cpu_profile=rated or oc1500, and the matching
+# target/cpu initramfs setup; see docs/cpu-power-management.md.

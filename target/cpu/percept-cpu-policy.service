@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+[Unit]
+Description=Apply qualified Percept CPU frequency policy
+After=local-fs.target systemd-modules-load.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/percept/cpu-policy.sh
+TimeoutStartSec=75
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

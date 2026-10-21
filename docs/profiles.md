@@ -37,7 +37,7 @@ For the launcher to `kexec` into a kernel and have it boot on this board:
 | Fixup | What it changes | Applies to |
 |---|---|---|
 | `upper-ram` | Declares the fourth GiB of RAM | 6.12 |
-| `thermal` | `#thermal-sensor-cells` 0 → 1 so the TMU registers | 6.12 |
+| `thermal` | `#thermal-sensor-cells` 0 â†’ 1 so the TMU registers | 6.12 |
 | `media-gpu` / `media-gpu-vpu` | Enables the etnaviv GPU, optionally Hantro G1/G2, and gives the VPU power domain its clocks (without them the VPU hangs the bus) | 6.12 |
 | `usbc-extcon` | Removes a dangling `extcon` reference so the USB-C port probes (applied to the DTB on the EFI partition) | 6.12 |
 
@@ -72,3 +72,12 @@ boots.
 
 Profile fields are validated by `src/percept/profiles.py`; unknown fixup names
 and bad command-line characters are rejected.
+
+## CPU power profile extension
+
+`os.cpu_profile` defaults to `unchanged`. The Debian profile declares
+`[cpu_power].kernels = ["6.12.*"]` and its additional kernel symbols. With
+`rated` or `oc1500`, resolution requires that kernel series and thermal support,
+removes only obsolete PMIC/CPUfreq blacklist entries and supplies a powersave
+default. The builder must pass `resolved.rootfs_env` to profile hooks in the
+arm64 chroot. See [CPU power management](cpu-power-management.md).

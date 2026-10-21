@@ -63,6 +63,7 @@ FIELDS = [
     Field("rescue.log_receiver_port", "int", None, False, "Port for the log receiver."),
 
     Field("os.profile", "str", "debian-trixie", False, "Profile directory name under `profiles/`."),
+    Field("os.cpu_profile", "str", "unchanged", False, "`unchanged`, `rated` (800/1300 MHz) or experimental `oc1500` (800/1300/1500 MHz). Requires the profile CPU-power contract."),
     Field("os.mirror", "str", None, False, "Debian mirror URL override."),
     Field("os.kernel.source", "str", "distro", False, "`distro` (profile default), `files` (your Image/initrd/modules) or `custom`."),
     Field("os.kernel.image", "str", None, False, "Path to an arm64 `Image` (files only)."),

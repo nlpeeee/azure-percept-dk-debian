@@ -109,6 +109,7 @@ config_defaults() {
     conf_fixups_policy=skip-inapplicable
     conf_board_model=
     conf_cpu_profile=unchanged
+    conf_cpu_pmic=0
     legacy_upper_ram=
     legacy_thermal_fix=
     legacy_media=
@@ -183,6 +184,7 @@ read_config() {
             thermal_fix) legacy_thermal_fix=$value ;;
             media) legacy_media=$value ;;
             cpu_profile) conf_cpu_profile=$value ;;
+            cpu_pmic) conf_cpu_pmic=$value ;;
             *) local_log "config_unknown_key_$key"; return 1 ;;
         esac
     done <"$1"
@@ -223,7 +225,19 @@ read_config() {
     fi
     valid_fixup_list "$conf_fixups" || { local_log "config_invalid_dtb_fixups"; return 1; }
     case "$conf_fixups_policy" in skip-inapplicable|strict) ;; *) local_log "config_invalid_dtb_fixups_policy"; return 1 ;; esac
-    [ "$conf_cpu_profile" = unchanged ] || { local_log "config_unsupported_cpu_profile"; return 1; }
+    case "$conf_cpu_profile" in unchanged|rated|oc1500) ;; *) local_log "config_invalid_cpu_profile"; return 1 ;; esac
+    case "$conf_cpu_pmic" in 0|1) ;; *) local_log "config_invalid_cpu_pmic"; return 1 ;; esac
+    if [ "$conf_cpu_profile" != unchanged ]; then
+        [ "$conf_cpu_pmic" = 1 ] || { local_log "config_cpu_pmic_required"; return 1; }
+        governors=0
+        for word in $conf_cmdline; do
+            case "$word" in
+                cpufreq.default_governor=powersave) governors=$((governors + 1)) ;;
+                cpufreq.default_governor=*) local_log "config_cpu_governor_invalid"; return 1 ;;
+            esac
+        done
+        [ "$governors" = 1 ] || { local_log "config_cpu_governor_required"; return 1; }
+    fi
     valid_path "$conf_kernel" || { local_log "config_invalid_kernel"; return 1; }
     [ -z "$conf_initrd" ] || valid_path "$conf_initrd" || { local_log "config_invalid_initrd"; return 1; }
     case "$conf_kernel_format" in auto|Image|Image.gz) ;; *) local_log "config_invalid_kernel_format"; return 1 ;; esac

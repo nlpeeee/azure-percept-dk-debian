@@ -467,6 +467,19 @@ for fixup in "$@"; do
     apply_fixup "$fixup"
 done
 
+# CPU supply conversion is mandatory when selected: never skip its contract failure.
+# These target-only transformations follow the RAM/thermal/media transformations.
+if [ "$conf_cpu_pmic" = 1 ]; then
+    /bin/percept-fdt-pmic "$target_dtb" /run/target-pmic.dtb >>/run/capture.log 2>&1 || rescue pmic_fdt_failed
+    target_dtb=/run/target-pmic.dtb
+    emit dtb_fixup applied_cpu_pmic
+fi
+if [ "$conf_cpu_profile" != unchanged ]; then
+    /bin/percept-fdt-cpu "$target_dtb" /run/target-cpu.dtb "$conf_cpu_profile" >>/run/capture.log 2>&1 || rescue cpu_fdt_failed
+    target_dtb=/run/target-cpu.dtb
+    emit dtb_fixup "applied_cpu_$conf_cpu_profile"
+fi
+
 emit capture_begin "${conf_kernel##*/}"
 set -- -c -l "$ROOT$conf_kernel" --append="$conf_cmdline" --dtb="$target_dtb"
 [ -z "$conf_initrd" ] || set -- "$@" --initrd="$ROOT$conf_initrd"

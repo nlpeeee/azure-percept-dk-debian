@@ -11,12 +11,13 @@ mirror = "http://deb.debian.org/debian"
 variant = "minbase"
 components = ["main", "contrib", "non-free-firmware"]
 include = [
-  "systemd", "systemd-sysv", "dbus", "initramfs-tools", "kmod", "ca-certificates", "locales",
+  "systemd", "systemd-sysv", "dbus", "initramfs-tools", "kmod", "python3", "ca-certificates", "locales",
   "openssh-server", "sudo", "nano", "less", "curl", "wget", "iproute2", "iputils-ping",
   "systemd-resolved", "systemd-timesyncd", "e2fsprogs", "dosfstools", "fdisk", "cloud-guest-utils",
   "pciutils", "usbutils", "i2c-tools", "htop", "bash-completion", "zstd", "wpasupplicant",
 ]
 builder = "qemu-user"
+hooks = ["20-cpu-power.sh"]
 min_size_mib = 2048
 
 [kernel]
@@ -26,6 +27,12 @@ pin = "6.12.*"                     # apt pin: minor updates flow, a new major se
 format = "Image"
 require_initrd = true
 validated_releases = ["6.12.113+deb13-arm64"]
+
+# The CPU adaptation and initramfs ordering are qualified for this kernel series.
+# The rootfs builder must pass resolved.rootfs_env to hooks with /src available.
+[cpu_power]
+kernels = ["6.12.*"]
+config_required = ["MFD_ROHM_BD718XX", "REGULATOR_BD718XX", "ARM_IMX_CPUFREQ_DT", "CPUFREQ_DT", "CPU_FREQ_GOV_POWERSAVE", "CPU_FREQ_GOV_SCHEDUTIL", "CPU_THERMAL"]
 
 [boot]
 kernel_path = "/vmlinuz"           # Debian's own symlinks: kernel updates keep working

@@ -103,6 +103,11 @@ def check_profile(p, dir_name=None):
         if not isinstance(v, list) or any(not isinstance(x, str) for x in v):
             bad.append("kernel.%s must be a list of strings" % key)
 
+    power = p.get("cpu_power", {})
+    if power and (not isinstance(power.get("kernels"), list) or not power["kernels"] or
+                  any(not isinstance(x, str) for x in power["kernels"])):
+        bad.append("cpu_power.kernels must be a non-empty list of release globs")
+
     c = p.get("contract", {})
     base = need(c, "cmdline_baseline", "contract")
     if isinstance(base, str) and not CMDLINE_RE.match(base):
@@ -202,9 +207,35 @@ def resolve(cfg, profile, rootfs_uuid=PLACEHOLDER_UUID):
     base = profile["contract"]["cmdline_baseline"]
     extra = cfg["os"]["kernel"]["cmdline_extra"].strip()
     cmdline = " ".join(x for x in ("root=UUID=%s ro" % rootfs_uuid, base, extra) if x)
+    cpu_profile = cfg["os"].get("cpu_profile", "unchanged")
+    if cpu_profile != "unchanged":
+        supported = profile.get("cpu_power", {}).get("kernels", [])
+        if not any(fnmatch.fnmatch(release, pattern) for pattern in supported):
+            problems.append("CPU power profile requires a kernel matched by cpu_power.kernels")
+        if not feats.get("thermal"):
+            problems.append("CPU power profile requires the thermal feature")
+        # Preserve unrelated blacklists. The PMIC provider and CPUfreq must probe.
+        blacklist = {"rohm_bd718x7", "bd718x7_regulator", "imx_cpufreq_dt", "cpufreq_dt"}
+        words = []
+        for word in cmdline.split():
+            if word.startswith("module_blacklist="):
+                keep = [x for x in word.split("=", 1)[1].split(",") if x not in blacklist]
+                if keep:
+                    words.append("module_blacklist=" + ",".join(keep))
+            elif word.startswith("cpufreq.default_governor="):
+                if word != "cpufreq.default_governor=powersave":
+                    problems.append("CPU power profile requires powersave at startup")
+            else:
+                words.append(word)
+        words.append("cpufreq.default_governor=powersave")
+        cmdline = " ".join(words)
+        if cpu_profile == "oc1500":
+            warnings.append("oc1500 is an experimental overclock; qualify each board separately")
     boot = profile.get("boot", {})
     return {
         "release": release,
+        "cpu_profile": cpu_profile,
+        "rootfs_env": {"PERCEPT_CPU_PROFILE": cpu_profile},
         "features": feats,
         "fixups": fixups,
         "cmdline": cmdline,

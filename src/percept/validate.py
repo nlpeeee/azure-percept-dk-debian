@@ -36,6 +36,7 @@ CHOICES = {
     "network.ethernet.ipv6": ("auto", "off"),
     "network.wifi.security": ("wpa2", "wpa3", "open"),
     "rescue.net_mode": ("dhcp", "static"),
+    "os.cpu_profile": ("unchanged", "rated", "oc1500"),
     "os.kernel.source": ("distro", "files", "custom"),
     "storage.layout": ("auto", "v2", "factory"),
     "install.method": ("uuu", "ssh"),
@@ -369,6 +370,8 @@ def validate(cfg, base_dir=".", env=None):
         res.err("os.profile", "invalid profile name")
     if o.get("mirror") and not re.fullmatch(r"https?://[^\s]+", o["mirror"]):
         res.err("os.mirror", "must be an http(s) URL")
+    if o["cpu_profile"] not in CHOICES["os.cpu_profile"]:
+        res.err("os.cpu_profile", "must be unchanged, rated or oc1500")
     k = o["kernel"]
     if k["source"] not in CHOICES["os.kernel.source"]:
         res.err("os.kernel.source", "must be distro, files or custom")

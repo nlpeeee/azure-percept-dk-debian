@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# modprobe install guard. Do not expose alternate paths bypassing this guard.
+set -eu
+case "${1:-}" in imx_cpufreq_dt|cpufreq_dt) module=$1 ;; *) exit 1 ;; esac
+[ "$#" = 1 ] || exit 1
+[ -d /sys/module/cpufreq_powersave ] || {
+    echo "percept-cpu: reject $module: powersave module absent" >&2; exit 1;
+}
+# Refuse to create a first policy with the compiled schedutil default.
+# Reject duplicate/overriding governor options as well as an absent parameter.
+count=0
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        cpufreq.default_governor=powersave) count=$((count + 1)) ;;
+        cpufreq.default_governor=*) exit 1 ;;
+    esac
+done
+[ "$count" = 1 ] || exit 1
+[ "$(cat /etc/percept-cpu/enable-cpufreq 2>/dev/null)" = voltage-contract-approved-v1 ] || {
+    echo "percept-cpu: reject $module: voltage contract not approved" >&2; exit 1;
+}
+# Keep explicit guarded loads independent of initramfs alias blacklist options.
+unset MODPROBE_OPTIONS
+exec /sbin/modprobe --ignore-install "$module"

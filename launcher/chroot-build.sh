@@ -33,6 +33,10 @@ echo "== device-tree helpers (static)"
 gcc -O2 -Wall -Wextra -static -o /out/stage/percept-fdt-upper /src/launcher/fdt/extend-fdt.c
 gcc -O2 -Wall -Wextra -static -o /out/stage/percept-fdt-thermal /src/launcher/fdt/fix-thermal-fdt.c
 gcc -O2 -Wall -Wextra -static -o /out/stage/percept-fdt-media /src/launcher/fdt/adapt-fdt.c -lfdt
+for kind in cpu pmic; do
+    gcc -std=c99 -O2 -Wall -Wextra -Werror -static -o /out/stage/percept-fdt-$kind \
+        /src/launcher/fdt/adapt-$kind-fdt.c -lfdt
+done
 
 args=(
   --output /out/launcher.cpio.gz
@@ -56,6 +60,8 @@ args=(
   --static-binary /out/stage/percept-fdt-upper:bin/percept-fdt-upper
   --static-binary /out/stage/percept-fdt-thermal:bin/percept-fdt-thermal
   --static-binary /out/stage/percept-fdt-media:bin/percept-fdt-media
+  --static-binary /out/stage/percept-fdt-cpu:bin/percept-fdt-cpu
+  --static-binary /out/stage/percept-fdt-pmic:bin/percept-fdt-pmic
 )
 if [ "${NO_MODULES:-0}" != 1 ]; then
     args+=(--file /modules/arch.ko:lib/percept/arch.ko:0444 --file /modules/core.ko:lib/percept/core.ko:0444)
@@ -77,6 +83,6 @@ chroot "$check" /usr/sbin/mkfs.ext4 -V 2>&1 | head -1
 chroot "$check" /usr/bin/tar --version | head -1
 chroot "$check" /usr/bin/zstd -V
 chroot "$check" /bin/sh -c '. /lib/percept/percept-config.sh' 2>&1 || true
-for h in upper thermal media; do chroot "$check" /bin/percept-fdt-$h 2>&1 | head -1 || true; done
+for h in upper thermal media cpu pmic; do chroot "$check" /bin/percept-fdt-$h 2>&1 | head -1 || true; done
 echo "== done"
 sha256sum /out/launcher.cpio.gz

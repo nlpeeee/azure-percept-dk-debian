@@ -13,7 +13,7 @@ case "$mode" in
         read_config "$1"
         printf 'rc=%s\n' "$?"
         for v in mode profile kernel initrd kernel_format cmdline root root_fstype root_opts net_mode net_if net_ip \
-                 net_prefix net_gw log_receiver_ip log_receiver_port fail_limit rescue_console fixups fixups_policy board_model; do
+                 net_prefix net_gw log_receiver_ip log_receiver_port fail_limit rescue_console fixups fixups_policy board_model cpu_profile cpu_pmic; do
             eval "printf 'conf_%s=%s\n' $v \"\$conf_$v\""
         done
         printf 'root_spec=%s\n' "$(root_spec)"

@@ -336,8 +336,23 @@ def validate(cfg, base_dir=".", env=None):
     if not rk and users:
         rk = list(users[0].get("authorized_keys", []))
     r["authorized_keys"] = rk
-    if r["enabled"] and not rk:
-        res.err("rescue.authorized_keys", "rescue mode is key-only, so it needs at least one SSH key (set one on the first user or here)")
+    rh = r.get("password_hash")
+    if rh is not None and not sha512crypt.looks_like_hash(rh):
+        res.err("rescue.password_hash", "not a '$6$' SHA-512 crypt hash; make one with 'percept hash-password'")
+    if r["password_auth"]:
+        first = users[0] if users else {}
+        if rh is None:
+            if first.get("password_mode") == "hash":
+                r["password_hash"] = first["password_hash"]
+            elif first.get("password_mode") == "generate":
+                r["password_mode"] = "generate"  # build step reuses the generated password
+            else:
+                res.err("rescue.password_auth", "needs a password: set rescue.password_hash, or give the first user a password")
+    elif rh is not None:
+        res.warn("rescue.password_hash", "ignored because rescue.password_auth is false")
+        r.pop("password_hash", None)
+    if r["enabled"] and not rk and not r["password_auth"]:
+        res.err("rescue.authorized_keys", "rescue needs a way in: at least one SSH key (on the first user or here), or rescue.password_auth = true with a password")
     lip, lpt = r.get("log_receiver_ip"), r.get("log_receiver_port")
     if lip:
         _ipv4(res, "rescue.log_receiver_ip", lip)

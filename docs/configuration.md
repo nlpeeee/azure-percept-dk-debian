@@ -84,12 +84,16 @@ Examples: [`examples/board.minimal.toml`](../examples/board.minimal.toml),
 
 | Setting | Type | Default | Secret | Meaning |
 |---|---|---|---|---|
-| `enabled` | bool | `true` |  | Keep the key-only SSH rescue mode (strongly recommended). |
+| `enabled` | bool | `true` |  | Keep the SSH rescue mode (recommended). Keys by default; passwords if `password_auth` is on. |
 | `net_mode` | str | `dhcp` |  | `dhcp` or `static`. Static is easier to find when something is wrong. |
 | `address` | str | (none) |  | Rescue IPv4 address (static only). |
 | `prefix` | int | - |  | Rescue prefix length (static only). |
 | `gateway` | str | (none) |  | Rescue gateway (optional). |
 | `authorized_keys` | list[str] | `[]` |  | Rescue SSH keys. Defaults to the first user's keys. |
+| `password_auth` | bool | `false` |  | Allow password login (as `root`) in rescue mode. Uses `rescue.password_hash`, else the first user's password. |
+| `password_hash` | str | (none) | yes | A `$6$` hash for the rescue `root` password (optional; defaults to the first user's). |
+| `password_hash_file` | str | (none) | yes | File containing the hash. |
+| `password_hash_env` | str | (none) |  | Environment variable holding the hash. |
 | `fail_limit` | int | `3` |  | Failed boots before the launcher enters rescue (1-10). |
 | `grub_tries` | int | `4` |  | GRUB boot-attempt countdown start (1-4). |
 | `log_receiver_ip` | str | (none) |  | Optional UDP boot-log receiver address. |

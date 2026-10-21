@@ -101,5 +101,20 @@ def grubenv(tries):
     return head + b"#" * (GRUBENV_SIZE - len(head))
 
 
+def rescue_esp_files(cfg):
+    """Files for the ESP's percept/ directory that carry rescue credentials: {name: bytes}.
+
+    ``rescue_password_hash`` is present only when password login is enabled and a hash is known
+    (a generated password is filled in by the build step).
+    """
+    r = cfg["rescue"]
+    files = {}
+    if r["authorized_keys"]:
+        files["authorized_keys"] = ("\n".join(r["authorized_keys"]) + "\n").encode("ascii")
+    if r["password_auth"] and r.get("password_hash"):
+        files["rescue_password_hash"] = (r["password_hash"] + "\n").encode("ascii")
+    return files
+
+
 def failcount(value=0):
     return ("%d\n" % value).encode("ascii")

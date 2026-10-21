@@ -24,6 +24,10 @@ def collect_secrets(cfg, extra=()):
         if h:
             found.add(h)
             found.add(h.rsplit("$", 1)[-1])
+    rh = cfg.get("rescue", {}).get("password_hash")
+    if rh:
+        found.add(rh)
+        found.add(rh.rsplit("$", 1)[-1])
     return {s for s in found if len(s) >= MIN_LEN}
 
 

@@ -45,10 +45,11 @@ def wizard_answers(key_choice="p"):
         "",               # hostname (default)
         "Europe/London",  # tz
         "percept",        # user
-        key_choice, helpers.ed25519_key(9, "wiz@test"),  # key menu, pasted key
         "type",           # password mode
+        key_choice, helpers.ed25519_key(9, "wiz@test"),  # key menu, pasted key
         CANARY_PW, CANARY_PW,
         "n",              # password ssh
+        "y",              # same password in rescue
         "static", "192.168.50.20", "24", "192.168.50.1", "",   # ethernet (dns default = gateway)
         "y", "HomeNet", "wpa2", CANARY_PSK, "gb", "n",          # wifi
         "static", "192.168.50.21", "24", "",                    # rescue
@@ -75,6 +76,7 @@ class Wizard(unittest.TestCase):
             self.assertNotIn("password_hash", board)
             self.assertIn("password_hash", secrets)
             self.assertIn('country = "GB"', board)
+            self.assertTrue(cfg["rescue"]["password_auth"])
             if os.name != "nt":
                 self.assertEqual(stat.S_IMODE(os.stat(os.path.join(d, "secrets.toml")).st_mode), 0o600)
             # reload round-trip is valid and identical

@@ -12,9 +12,12 @@
   secrets (Wi-Fi PSK, password hashes, keys). It is git-ignored; keep it that
   way and do not paste it into issues. `percept` logs are redacted, but check
   before sharing.
-- Rescue mode (stock kernel + SSH) accepts **keys only**, from the ESP file
-  `percept/authorized_keys`. Anyone with physical access to the board's eMMC or
-  USB recovery can bypass this; that is inherent to the hardware.
+- Rescue mode (stock kernel + SSH) accepts the keys in the ESP file
+  `percept/authorized_keys`. If you enable `rescue.password_auth` it also accepts
+  the `root` password whose hash is in `percept/rescue_password_hash` (your choice;
+  a password is easier to use and easier to guess - pick a long one and keep the
+  board off untrusted networks). Anyone with physical access to the board's eMMC
+  or USB recovery can bypass either; that is inherent to the hardware.
 - Services you add (for example the camera RTSP preview) are your
   responsibility; the bundled preview is unauthenticated and unencrypted.
 
@@ -22,4 +25,4 @@
 
 Please report privately through GitHub's *Security → Report a vulnerability* on
 this repository. Do not open a public issue for anything that exposes keys,
-credentials, or a way to bypass the rescue-mode key check.
+credentials, or a way to bypass rescue-mode authentication.

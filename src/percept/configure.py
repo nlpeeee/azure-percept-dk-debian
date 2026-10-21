@@ -71,17 +71,19 @@ def _key_check(value):
     return None
 
 
-def pick_ssh_key(pr, name, home=None, keygen=shutil.which("ssh-keygen")):
+def pick_ssh_key(pr, name, home=None, keygen=shutil.which("ssh-keygen"), allow_skip=False):
     keys = find_public_keys(home)
     if keys:
         pr.out("SSH public keys found on this PC:")
         for i, (p, line) in enumerate(keys, 1):
             pr.out("  %d) %s  (%s)" % (i, p, line.split()[0]))
-        pr.out("  p) paste a key    g) generate a new one")
+        pr.out("  p) paste a key    g) generate a new one" + ("    s) skip (password only)" if allow_skip else ""))
         choice = pr.ask("Which key should be allowed to log in", "1" if keys else "p")
     else:
         pr.out("No SSH public key found in ~/.ssh.")
         choice = pr.ask("Paste a public key (p) or generate a new one (g)", "g" if keygen else "p")
+    if choice == "s" and allow_skip:
+        return None
     if choice.isdigit() and 1 <= int(choice) <= len(keys):
         return keys[int(choice) - 1][1]
     if choice == "g":
@@ -114,10 +116,10 @@ def run_wizard(pr, home=None, defaults_name=None):
     # --- user ------------------------------------------------------------
     user = pr.ask("Login user name", "percept",
                   lambda v: None if validate.USER_RE.match(v) and v not in validate.RESERVED_USERS else "invalid or reserved name")
-    key = pick_ssh_key(pr, name, home)
-    u = {"name": user, "authorized_keys": [key]}
     mode = pr.choose("Password for %s: none = SSH key only, generate = random password saved for you, type = enter one" % user,
-                     ["none", "generate", "type"], "none")
+                     ["none", "generate", "type"], "type")
+    key = pick_ssh_key(pr, name, home, allow_skip=(mode != "none"))
+    u = {"name": user, "authorized_keys": [key] if key else []}
     if mode == "generate":
         u["password_mode"] = "generate"
     elif mode == "type":
@@ -129,8 +131,10 @@ def run_wizard(pr, home=None, defaults_name=None):
         u["password_hash"] = sha512crypt.crypt(p1)
         u["password_mode"] = "hash"
     cfg["user"] = [u]
+    rescue_pw = False
     if mode != "none":
-        cfg["ssh"] = {"password_auth": pr.yes("Allow SSH password logins too (less secure than keys)", False)}
+        cfg["ssh"] = {"password_auth": pr.yes("Allow SSH password logins on the installed system", True)}
+        rescue_pw = pr.yes("Allow the same password for SSH login (as root) in rescue mode", True)
 
     # --- ethernet --------------------------------------------------------
     eth = {"mode": pr.choose("Ethernet addressing", ["dhcp", "static"], "dhcp")}
@@ -169,6 +173,8 @@ def run_wizard(pr, home=None, defaults_name=None):
         gw = pr.ask("  Gateway (optional)", eth.get("gateway", "") or "", lambda v: None if not v or _is_ip(v) else "not an IPv4 address")
         if gw:
             r["gateway"] = gw
+    if rescue_pw:
+        r["password_auth"] = True
     cfg["rescue"] = r
 
     # --- install ---------------------------------------------------------

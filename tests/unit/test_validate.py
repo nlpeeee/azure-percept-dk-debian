@@ -233,5 +233,69 @@ class RescueAndOs(unittest.TestCase):
         self.assertEqual(check(cfg).errors, [])
 
 
+class PasswordLogin(unittest.TestCase):
+    """Password-only setups are supported, for the installed system and for rescue mode."""
+
+    def pw_cfg(self, **rescue):
+        cfg = helpers.minimal_cfg()
+        cfg["user"][0].update(authorized_keys=[], password_hash=sha512crypt.crypt("correct horse"))
+        cfg["ssh"] = {"password_auth": True}
+        cfg["rescue"] = dict(rescue)
+        return cfg
+
+    def test_password_only_system_and_rescue(self):
+        r = check(self.pw_cfg(password_auth=True))
+        self.assertEqual(r.errors, [])
+        self.assertEqual(r.config["rescue"]["password_hash"], r.config["user"][0]["password_hash"])
+        self.assertEqual(r.config["rescue"]["authorized_keys"], [])
+
+    def test_rescue_without_any_way_in(self):
+        self.assertTrue(errs(check(self.pw_cfg()), "rescue needs a way in"))
+
+    def test_separate_rescue_password(self):
+        h2 = sha512crypt.crypt("another password")
+        r = check(self.pw_cfg(password_auth=True, password_hash=h2))
+        self.assertEqual(r.errors, [])
+        self.assertEqual(r.config["rescue"]["password_hash"], h2)
+
+    def test_rescue_password_needs_a_password(self):
+        cfg = helpers.minimal_cfg()
+        cfg["rescue"] = {"password_auth": True}
+        self.assertTrue(errs(check(cfg), "rescue.password_auth"))
+        cfg["rescue"] = {"password_auth": True, "password_hash": "plaintext"}
+        self.assertTrue(errs(check(cfg), "rescue.password_hash"))
+
+    def test_generated_password_is_shared_with_rescue(self):
+        cfg = helpers.minimal_cfg()
+        cfg["user"][0]["password_mode"] = "generate"
+        cfg["rescue"] = {"password_auth": True}
+        r = check(cfg)
+        self.assertEqual(r.errors, [])
+        self.assertEqual(r.config["rescue"]["password_mode"], "generate")
+
+    def test_unused_rescue_hash_warns_and_is_dropped(self):
+        cfg = helpers.minimal_cfg()
+        cfg["rescue"] = {"password_hash": sha512crypt.crypt("correct horse")}
+        r = check(cfg)
+        self.assertNotIn("password_hash", r.config["rescue"])
+        self.assertTrue(r.warnings)
+
+    def test_esp_files(self):
+        from percept import launcher_conf
+        r = check(self.pw_cfg(password_auth=True))
+        files = launcher_conf.rescue_esp_files(r.config)
+        self.assertEqual(set(files), {"rescue_password_hash"})
+        self.assertTrue(files["rescue_password_hash"].startswith(b"$6$"))
+        r = check(helpers.minimal_cfg())
+        self.assertEqual(set(launcher_conf.rescue_esp_files(r.config)), {"authorized_keys"})
+
+
+class LauncherInitSupportsRescuePassword(unittest.TestCase):
+    def test_init_reads_hash_and_toggles_dropbear_s(self):
+        text = open(os.path.join(helpers.ROOT, "launcher", "init"), encoding="utf-8").read()
+        for needle in ("rescue_password_hash", "dropbear_pw=-s", "$dropbear_pw"):
+            self.assertIn(needle, text)
+
+
 if __name__ == "__main__":
     unittest.main()

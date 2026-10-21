@@ -48,5 +48,6 @@ the launcher will accept them in M4.
 | File | Meaning |
 |---|---|
 | `percept/failcount` | `N\n`; the launcher increments it each boot, the OS's `percept-boot-ok` resets it to 0 |
-| `percept/authorized_keys` | rescue-mode SSH keys (planned in v2) |
+| `percept/authorized_keys` | rescue-mode SSH keys |
+| `percept/rescue_password_hash` | optional one-line `$6$` hash; if present, rescue mode also accepts the `root` password (dropbear password login is otherwise off) |
 | `boot/grub2/grubenv` | exactly 1024 bytes; `percept_tries` counts down from 4 in GRUB, reset by `percept-boot-ok` |

@@ -24,7 +24,7 @@ project keeps the signed chain and uses the stock kernel only as a *launcher*:
    to the live firmware tree, loads two small `kexec` modules, and jumps into
    **your** kernel (proven: Debian's unmodified `6.12.113+deb13-arm64`).
 3. If anything fails three times in a row, or you ask for it, the launcher
-   drops into a key-only SSH **rescue mode** on the stock kernel instead of
+   drops into an SSH **rescue mode** (keys, and optionally a password) on the stock kernel instead of
    leaving you with a brick. A "boot OK" service on the installed OS clears the
    failure counter.
 

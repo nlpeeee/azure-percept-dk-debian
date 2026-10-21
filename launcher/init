@@ -293,9 +293,22 @@ rescue() {
     # Keys baked into the archive, plus any the ESP adds.
     $BB cat /etc/percept-launcher/authorized_keys >/root/.ssh/authorized_keys 2>/dev/null
     host_key=
+    rescue_hash=
     if mount_esp ro; then
         if [ -s "$ESP/percept/authorized_keys" ]; then
             $BB cat "$ESP/percept/authorized_keys" >>/root/.ssh/authorized_keys
+        fi
+        # Optional password login for rescue (root): a $6$ SHA-512 crypt hash, one line.
+        if [ -s "$ESP/percept/rescue_password_hash" ]; then
+            rescue_hash=$($BB head -n 1 "$ESP/percept/rescue_password_hash")
+            rescue_hash=${rescue_hash%"$cr"}
+            case "$rescue_hash" in
+                '$6$'*) ;;
+                *) local_log "rescue_password_hash_ignored"; rescue_hash= ;;
+            esac
+            case "$rescue_hash" in
+                *[!A-Za-z0-9./\$=]*) local_log "rescue_password_hash_ignored"; rescue_hash= ;;
+            esac
         fi
         if [ -s "$ESP/percept/dropbear_ed25519_host_key" ]; then
             $BB cp "$ESP/percept/dropbear_ed25519_host_key" /etc/dropbear/dropbear_ed25519_host_key &&
@@ -310,7 +323,13 @@ rescue() {
     network_up || local_log "rescue_without_network"
     $BB --install -s
     printf '%s\n' 'root:x:0:0:root:/root:/bin/sh' >/etc/passwd
-    printf '%s\n' 'root:*:19000:0:99999:7:::' >/etc/shadow
+    if [ -n "$rescue_hash" ]; then
+        printf '%s\n' "root:$rescue_hash:19000:0:99999:7:::" >/etc/shadow
+        dropbear_pw=
+    else
+        printf '%s\n' 'root:*:19000:0:99999:7:::' >/etc/shadow
+        dropbear_pw=-s
+    fi
     printf '%s\n' 'root:x:0:' >/etc/group
     printf '%s\n' /bin/sh >/etc/shells
     $BB chmod 600 /etc/shadow
@@ -324,9 +343,9 @@ rescue() {
     else
         dropbear_keys=-R
     fi
-    # Password logins are disabled; only authorized_keys can log in.
+    # Password logins stay off (-s) unless the ESP supplies rescue_password_hash.
     printf '%s\n' \
-        "::respawn:/usr/sbin/dropbear -F -E -s -p 22 -P /run/dropbear.pid $dropbear_keys" \
+        "::respawn:/usr/sbin/dropbear -F -E $dropbear_pw -p 22 -P /run/dropbear.pid $dropbear_keys" \
         'ttymxc0::askfirst:-/bin/sh' \
         '::ctrlaltdel:/bin/busybox reboot -f' \
         '::shutdown:/bin/busybox sync' >/etc/inittab

@@ -11,7 +11,6 @@ from percept import tomlmini
 p=tomlmini.load_file(sys.argv[2]+'/profile.toml');c=json.load(open(sys.argv[1]))['config']
 f=p['rootfs'];extra=['python3','tzdata','gdisk','firmware-realtek','wireless-regdb','iw','bluez']
 extra+=['libegl-mesa0','libgl1-mesa-dri','mesa-utils','v4l-utils','ffmpeg'] if c['os']['features'].get('gpu',True) is not False else []
-extra+=['gstreamer1.0-tools','gstreamer1.0-plugins-base','gstreamer1.0-plugins-good','gstreamer1.0-plugins-bad'] if c['os']['features'].get('vpu',True) is not False else []
 extra+=c['os']['packages']['extra']
 print(f['suite'],c['os'].get('mirror') or f['mirror'],','.join(f.get('components',['main'])),','.join(dict.fromkeys(f.get('include',[])+extra)))
 PY

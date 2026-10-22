@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: MIT
+pyfatfs==1.1.0
+cryptography==46.0.3
+pyinstaller==6.16.0
+setuptools==80.9.0

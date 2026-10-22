@@ -21,6 +21,16 @@ def repo_root():
     env = os.environ.get("PERCEPT_ROOT")
     if env:
         return os.path.abspath(env)
+    if getattr(sys, 'frozen', False):
+        from pathlib import Path
+        import shutil
+        base = Path(os.environ.get('LOCALAPPDATA') or os.environ.get('XDG_DATA_HOME') or str(Path.home()/'.local/share'))/'PerceptInstaller'
+        assets = Path(sys._MEIPASS)/'percept-resources'
+        # Application state is writable, while shipped assets always come from this executable.
+        for directory in ('profiles', 'vendor', 'release', 'tools'):
+            if (assets/directory).exists():
+                shutil.copytree(assets/directory, base/directory, dirs_exist_ok=True)
+        return str(base)
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
@@ -214,12 +224,23 @@ def build_parser():
         if command == "fetch": p.add_argument("--recovery", help="existing hash-verified Microsoft recovery ZIP")
         else:
             p.add_argument("--board", required=True)
-            p.add_argument("--target", choices=["image"], default="image")
+            p.add_argument("--recovery", help="verified Microsoft ZIP for bundle extraction recipe")
+            p.add_argument("--target", choices=["image", "bundle"], default="image")
             p.add_argument("--resolved-stdin", action="store_true", help=argparse.SUPPRESS)
     p=sub.add_parser("flash", help="verify a personal installer and flash one board using Windows uuu")
     p.add_argument("--board", required=True)
     p.add_argument("--manifest", required=True)
     p.add_argument("--uuu", help="path to the Windows uuu executable")
+    gui_parser = sub.add_parser("gui", help="open the portable installation wizard")
+    gui_parser.add_argument('--smoke-test', action='store_true', help=argparse.SUPPRESS)
+    p = sub.add_parser("prepare", help="prepare a personal USB image without WSL")
+    p.add_argument("--board", required=True)
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument("--bundle", help="local .bundle.tar.gz")
+    source.add_argument("--release", help="published release version")
+    p.add_argument("--trust-local", action="store_true", help="explicitly trust an unsigned local bundle")
+    p.add_argument("--recovery", help="existing pinned Microsoft recovery ZIP")
+    p.add_argument("--output", help="new private output directory")
     for name, text in PLANNED.items():
         sub.add_parser(name, help="(planned) " + text)
     return ap
@@ -236,6 +257,27 @@ def main(argv=None):
         return 2
     if args.cmd == "profile" and args.action == "check" and not args.path:
         ap.error("profile check needs a directory")
+    if args.cmd in ("prepare", "gui"):
+        try:
+            if args.cmd == "gui":
+                from .gui import main as gui_main
+                return gui_main(repo_root(), smoke=args.smoke_test)
+            from .prepare import prepare
+            result, _, _ = _load_validated(repo_root(), args.board)
+            if result is None: return 2
+            _print_result(result)
+            if not result.ok: return 1
+            path = prepare(repo_root(), result.config, bundle=args.bundle, release=args.release,
+                           trust_local=args.trust_local, recovery=args.recovery, output=args.output)
+            executable = '"'+sys.executable+'"' if getattr(sys, 'frozen', False) else 'python percept'
+            print('Next: '+executable+' flash --board '+result.config['board']['name']+' --manifest "'+str(path)+'"')
+            return 0
+        except (OSError, ValueError, RuntimeError, ImportError) as exc:
+            print('error: '+str(exc))
+            return 1
+        except KeyboardInterrupt:
+            print('Preparation cancelled; incomplete output cannot be flashed.')
+            return 130
     if args.cmd == "flash":
         from .flash import flash
         try:

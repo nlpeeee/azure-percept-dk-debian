@@ -66,7 +66,7 @@ class SetupUX(unittest.TestCase):
             for count in (0, 2):
                 output='\n'.join(['1:2 SDP: 0x1fc9 0x012b']*count)
                 with patch.object(flash, 'verify_manifest', return_value=({},script)), \
-                     patch.object(flash.subprocess, 'run', return_value=SimpleNamespace(stdout=output)) as run:
+                     patch.object(flash.subprocess, 'run', return_value=SimpleNamespace(stdout=output, returncode=0)) as run:
                     with self.assertRaisesRegex(ValueError, 'Nothing was flashed'):
                         flash.flash(tmp, 'unused', 'unit', str(tool), lambda _: self.fail('confirmation before detection'))
                     self.assertEqual(run.call_count, 1)
@@ -76,7 +76,7 @@ class SetupUX(unittest.TestCase):
             tool=Path(tmp)/'uuu.exe';tool.touch()
             script=Path(tmp)/'unit-PERSONAL.uuu'
             with patch.object(flash, 'verify_manifest', return_value=({},script)), \
-                 patch.object(flash.subprocess, 'run', return_value=SimpleNamespace(stdout='1:2 SDP: 0x1fc9 0x012b')) as run:
+                 patch.object(flash.subprocess, 'run', return_value=SimpleNamespace(stdout='1:2 SDP: 0x1fc9 0x012b', returncode=0)) as run:
                 with self.assertRaisesRegex(ValueError, 'cancelled'):
                     flash.flash(tmp, 'unused', 'unit', str(tool), lambda _: 'no')
                 self.assertEqual(run.call_count, 1)

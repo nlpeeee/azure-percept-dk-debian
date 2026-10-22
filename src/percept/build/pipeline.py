@@ -68,7 +68,21 @@ def fetch(repo,recovery=None):
     return repo/'cache/vendor/ms'
 def grub(repo):
     return (Path(repo)/'launcher/grub.cfg.production').read_text().replace('linux /boot/vmlinuz-5.4.3-mariner','linux $efiroot/percept/stock-Image')
-def build(repo,cfg):
+def generic_config(cfg):
+    from .. import validate
+    # Validate a minimal temporary build identity, then remove every personal field.
+    base = validate.validate({'schema':1,'board':{'name':'generic'},
+        'user':[{'name':'percept','password_mode':'generate'}],
+        'ssh':{'password_auth':True},'rescue':{'password_auth':True},
+        'os':copy.deepcopy(cfg['os'])}).config
+    base['board']['name'] = 'bundle-'+cfg['os']['cpu_profile']
+    base['user'] = []
+    base['ssh']['password_auth'] = False
+    base['rescue']['password_auth'] = False
+    base['rescue'].pop('password_mode', None)
+    return base
+
+def build(repo,cfg,bundle=False,recovery=None):
     repo=Path(repo).resolve();cfg=copy.deepcopy(cfg)
     if cfg['os']['profile']!='debian-trixie' or cfg['os']['kernel']['source']!='distro':
         raise ValueError('image v1 supports the Debian trixie distro-kernel profile')
@@ -76,11 +90,13 @@ def build(repo,cfg):
     if subprocess.check_output(['git','status','--porcelain'],cwd=repo,text=True).strip():
         raise ValueError('commit source changes before building an installer')
     commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip()
+    if bundle:
+        cfg = generic_config(cfg)
     name=cfg['board']['name'];stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     out=repo/'out'/name/stamp;out.mkdir(parents=True,exist_ok=False);out.chmod(0o700)
     print('Build output: '+str(out)+'; incomplete until a PERSONAL.manifest.json exists.', flush=True)
     work=out/'work';work.mkdir(mode=0o700)
-    generated=overlay.credentials(cfg)
+    generated=[] if bundle else overlay.credentials(cfg)
     if generated:private(out/'credentials.txt',''.join(user+': '+pw+'\n' for user,pw in generated))
     red=redact.Redactor(redact.collect_secrets(cfg)|{pw for _,pw in generated})
     log=out/'build.log'
@@ -100,7 +116,7 @@ def build(repo,cfg):
     run(['bash',repo/'launcher/build.sh'])
     root_uuid=str(uuid.uuid4());serial=secrets.token_hex(4).upper();esp_uuid=serial[:4]+'-'+serial[4:]
     settings=work/'settings.json'
-    private(settings,json.dumps({'config':cfg,'root_uuid':root_uuid,'esp_uuid':esp_uuid}))
+    private(settings,json.dumps({'config':cfg,'root_uuid':root_uuid,'esp_uuid':esp_uuid,'generic':bundle}))
     root=work/'rootfs'
     run(['bash',repo/'build/rootfs.sh',root,settings,repo/'profiles'/cfg['os']['profile']])
     release=(root/'percept-kernel-release').read_text().strip()
@@ -124,6 +140,11 @@ def build(repo,cfg):
     kernel=(root/'boot'/('vmlinuz-'+release)).read_bytes()
     if kernel[56:60]!=b'ARMd':raise ValueError('target is not an uncompressed arm64 Image')
     if not (root/'boot'/('initrd.img-'+release)).is_file():raise ValueError('target initramfs missing')
+    if bundle:
+        from .bundle_builder import finish_bundle
+        return finish_bundle(repo,cfg,out,work,root,root_uuid,esp_uuid,release,resolved,commit,run,recovery)
+    from ..packages import check_inventory
+    check_inventory((root/'percept-package-versions').read_text().splitlines(), resolved['features']['vpu'])
     stage=work/'esp';(stage/'percept').mkdir(parents=True);(stage/'EFI/BOOT').mkdir(parents=True);(stage/'boot/grub2').mkdir(parents=True)
     for f in ('bootaa64.efi','grubaa64.efi'):shutil.copy2(vendor/'efi'/f,stage/'EFI/BOOT'/f)
     shutil.copy2(vendor/'Image',stage/'percept/stock-Image')

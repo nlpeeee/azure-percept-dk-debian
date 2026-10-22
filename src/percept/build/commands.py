@@ -8,8 +8,8 @@ import subprocess
 import sys
 from .. import wsl
 from . import pipeline
-def new_completed_build(base, before):
-    completed = set(base.glob('*/*-PERSONAL.manifest.json')) - before
+def new_completed_build(base, before, pattern='*/*-PERSONAL.manifest.json'):
+    completed = set(base.glob(pattern)) - before
     if len(completed) != 1:
         raise ValueError('Expected exactly one new completed WSL build; found '+str(len(completed))+
                          '. Inspect WSL output; no previous image was selected.')
@@ -41,24 +41,30 @@ def dispatch(args,root):
         argv=[args.cmd]
         body=None
         if args.cmd=='build':
-            argv+=['--board',cfg['board']['name'],'--target','image','--resolved-stdin'];body=json.dumps(cfg)
+            argv+=['--board',cfg['board']['name'],'--target',args.target,'--resolved-stdin'];body=json.dumps(cfg)
+            if args.recovery: argv+=['--recovery',wsl.win_to_wsl_path(os.path.abspath(args.recovery))]
         elif args.recovery:argv+=['--recovery',wsl.win_to_wsl_path(os.path.abspath(args.recovery))]
         before = set()
+        output_board = ('bundle-'+cfg['os']['cpu_profile']) if args.cmd == 'build' and args.target == 'bundle' else (cfg['board']['name'] if args.cmd == 'build' else '')
+        pattern = '*/*.bundle.tar.gz' if args.cmd == 'build' and args.target == 'bundle' else '*/*-PERSONAL.manifest.json'
         if args.cmd == 'build':
-            base=Path(wsl.wsl_to_win_path(repo,distro))/'out'/cfg['board']['name']
-            before=set(base.glob('*/*-PERSONAL.manifest.json'))
+            base=Path(wsl.wsl_to_win_path(repo,distro))/'out'/output_board
+            before=set(base.glob(pattern))
         status=subprocess.run(wsl.reexec_argv(distro,repo,argv),input=body,text=True).returncode
         if status==0 and args.cmd=='build':
-            base=Path(wsl.wsl_to_win_path(repo,distro))/'out'/cfg['board']['name']
-            latest=new_completed_build(base, before)
-            destination=Path(root)/'out'/cfg['board']['name']/latest.name
+            base=Path(wsl.wsl_to_win_path(repo,distro))/'out'/output_board
+            latest=new_completed_build(base, before, pattern)
+            destination=Path(root)/'out'/output_board/latest.name
             destination.mkdir(parents=True,exist_ok=True)
             print('Copying completed personal installer to Windows; this may take several minutes.', flush=True)
             for file in latest.iterdir():
                 if file.is_file():shutil.copy2(file,destination/file.name)
             print('Windows installer files: '+str(destination))
-            print('Next: python percept flash --board '+cfg['board']['name']+' --manifest "'+str(destination/(cfg['board']['name']+'-PERSONAL.manifest.json'))+'"')
+            if args.target == 'image':
+                print('Next: python percept flash --board '+cfg['board']['name']+' --manifest "'+str(destination/(cfg['board']['name']+'-PERSONAL.manifest.json'))+'"')
+            else:
+                print('Import the .bundle.tar.gz into percept gui or percept prepare --bundle.')
         return status
     if args.cmd=='fetch':pipeline.fetch(root,args.recovery)
-    else:pipeline.build(root,cfg)
+    else:pipeline.build(root,cfg,bundle=args.target=='bundle',recovery=args.recovery)
     return 0

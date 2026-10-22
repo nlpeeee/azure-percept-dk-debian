@@ -73,6 +73,22 @@ redistributable = true
 used_by = ["flash"]
 
 [[input]]
+id = "uuu-linux-1.5.243"
+title = "NXP Universal Update Utility (Linux x64, Ubuntu 20.04 baseline)"
+url = "https://github.com/nxp-imx/mfgtools/releases/download/uuu_1.5.243/uuu-ubuntu20.04"
+sha256 = "09302f90c65e8f21c12e8c2bb6ae84d3a0160fdb63f973bb434af8800b829c15"
+redistributable = true
+used_by = ["flash"]
+
+[[input]]
+id = "uuu-source-1.5.243"
+title = "NXP uuu corresponding source archive"
+url = "https://github.com/nxp-imx/mfgtools/releases/download/uuu_1.5.243/uuu_source-uuu_1.5.243.tar.gz"
+sha256 = "dee3be0f337c631bf93232f5ea42440f07782ce005c9219a14731d66bbe83658"
+redistributable = true
+used_by = ["package"]
+
+[[input]]
 id = "azureeyemodule"
 title = "Microsoft azureeyemodule 2301-1-noauth arm64 (optional camera runtime)"
 url = "https://mcr.microsoft.com/v2/azureedgedevices/azureeyemodule/manifests/2301-1-noauth"

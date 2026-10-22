@@ -65,13 +65,20 @@ def release_bundle(repo, version, cfg, report, cancel=None):
     base = policy['base_url'].rstrip('/')+'/'+version+'/'
     message = small_download(base+'release.json')
     signature = json.loads(small_download(base+'release.sig'))
+    if not isinstance(signature,dict) or not isinstance(signature.get('key_id'),str) or not isinstance(signature.get('signature'),str):
+        raise ValueError('malformed release signature metadata; select another release')
     key = policy['public_keys'].get(signature['key_id'])
     if not key: raise ValueError('release uses an unknown signing key')
     bundles.verify_signature(message, signature['signature'], key)
     data = json.loads(message)
-    if data.get('schema') != 1 or data.get('version') != version:
+    if not isinstance(data,dict) or data.get('schema') != 1 or data.get('version') != version:
         raise ValueError('release version/format mismatch')
-    record = data['bundles'][cfg['os']['cpu_profile']]
+    variants=data.get('bundles',{})
+    if not isinstance(variants,dict) or cfg['os']['cpu_profile'] not in variants:
+        raise ValueError('release does not contain the selected CPU variant; choose a matching release or CPU profile')
+    record = variants[cfg['os']['cpu_profile']]
+    if not isinstance(record,dict) or not isinstance(record.get('file'),str) or type(record.get('bytes')) is not int or record['bytes']<=0 or not re.fullmatch(r'[0-9a-f]{64}',record.get('sha256','')):
+        raise ValueError('malformed release bundle record; select another release')
     name = record['file']
     if Path(name).name != name or '/' in name or '\\' in name or not name.endswith('.bundle.tar.gz'):
         raise ValueError('invalid release bundle name')

@@ -187,6 +187,23 @@ except ImportError:EXTRAS=False
 
 @unittest.skipUnless(EXTRAS,'install requirements-installer.txt for portable filesystem/signature tests')
 class WithDependencies(unittest.TestCase):
+    def test_release_missing_variant_is_actionable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'release').mkdir()
+            key=Ed25519PrivateKey.generate()
+            public=base64.b64encode(key.public_key().public_bytes_raw()).decode()
+            (root/'release/policy.json').write_text(json.dumps({'base_url':'https://example.invalid',
+                'public_keys':{'unit':public}}))
+            message=json.dumps({'schema':1,'version':'v-unit','bundles':{}}).encode()
+            signature=json.dumps({'key_id':'unit','signature':base64.b64encode(key.sign(message)).decode()}).encode()
+            cfg=validate.validate(helpers.minimal_cfg()).config
+            with patch('percept.prepare.small_download',side_effect=[message,signature]):
+                with self.assertRaisesRegex(ValueError,'selected CPU variant'):
+                    release_bundle(root,'v-unit',cfg,Reporter(lambda e:None))
+            with patch('percept.prepare.small_download',side_effect=[message,b'{}']):
+                with self.assertRaisesRegex(ValueError,'malformed release signature'):
+                    release_bundle(root,'v-unit',cfg,Reporter(lambda e:None))
+
     def test_encrypted_key_generation_and_overwrite_protection(self):
         from percept import sshkeys
         from cryptography.hazmat.primitives.serialization import load_ssh_private_key

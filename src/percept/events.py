@@ -13,7 +13,7 @@ class Reporter:
         suffix = ''
         if event.get('total'):
             suffix = ' (%d/%d bytes)' % (event['current'], event['total'])
-        print(event['message'] + suffix, flush=True)
+        print(event['message'] + suffix + ' [%ds]' % event['elapsed'], flush=True)
 
     def emit(self, stage, message, **values):
         self.callback(dict(stage=stage, message=message,

@@ -4,6 +4,7 @@ import io
 from pathlib import Path
 import queue
 import threading
+import time
 
 
 def main(repo, smoke=False):
@@ -42,6 +43,8 @@ def main(repo, smoke=False):
     log=tk.Text(frame,height=16,wrap='word',state='disabled');log.pack(fill='both',expand=True,pady=12)
     status=tk.StringVar(value='1. Configure or review your saved board settings.')
     ttk.Label(frame,textvariable=status,wraplength=790).pack(anchor='w')
+    progress=ttk.Progressbar(frame,mode='determinate',maximum=100)
+    progress.pack(fill='x',pady=(8,0))
     actions=ttk.Frame(frame);actions.pack(fill='x',pady=(12,0))
     state={'busy':False,'cfg':None,'manifest':None,'name':None}; mailbox=queue.Queue(); cancel=threading.Event()
     def append(text):
@@ -124,7 +127,9 @@ def main(repo, smoke=False):
             ttk.Button(editor,text='Validate and save',command=save).pack(pady=(0,10))
         except Exception as exc: messagebox.showerror('Settings',str(exc),parent=root)
     def worker(fn):
-        state['busy']=True;cancel.clear();toggle()
+        state['busy']=True;state['last_message']='Working';cancel.clear()
+        report.started=time.monotonic()
+        progress.configure(mode='indeterminate');progress.start(15);toggle()
         def run():
             try: mailbox.put(('done',fn()))
             except Exception as exc:
@@ -187,20 +192,31 @@ def main(repo, smoke=False):
             while True:
                 kind,value=mailbox.get_nowait()
                 if kind=='event':
-                    append(value['message']);status.set(value['message'])
+                    message=value['message']
+                    if value.get('total'):
+                        progress.stop();progress.configure(mode='determinate',maximum=value['total'],value=value['current'])
+                        message+=' (%.1f / %.1f MiB)' % (value['current']/1024**2,value['total']/1024**2)
+                    elif str(progress.cget('mode'))!='indeterminate':
+                        progress.configure(mode='indeterminate');progress.start(15)
+                    state['last_message']=message
+                    append(message);status.set(message)
                 elif kind=='confirm':
                     question,answer,ready=value
                     answer.append(simpledialog.askstring('Erase confirmation',question,parent=root) or '');ready.set()
                 elif kind=='done':
                     state['busy']=False
+                    progress.stop();progress.configure(mode='determinate',maximum=100,value=100 if isinstance(value,Path) or value==0 else 0)
                     if isinstance(value,Path):
                         state['manifest']=value;append('Prepared manifest: '+str(value))
                     elif value==0: status.set('Flash completed. Power off, restore DIP 1001, then power on. Allow several minutes before login.')
                     else: status.set('Flashing failed. Retain diagnostics; use the Microsoft restoration fallback if necessary.')
                     toggle()
                 elif kind=='error':
-                    state['busy']=False;toggle();append(value);status.set(value)
+                    state['busy']=False;progress.stop();progress.configure(mode='determinate',maximum=100,value=0)
+                    toggle();append(value);status.set(value)
         except queue.Empty: pass
+        if state['busy']:
+            status.set(state['last_message']+' (%ds elapsed)' % (time.monotonic()-report.started))
         root.after(100,pump)
     def close():
         if state['busy']:

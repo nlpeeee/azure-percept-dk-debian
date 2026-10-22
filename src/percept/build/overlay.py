@@ -21,7 +21,7 @@ def credentials(cfg):
         first=next((pw for user,pw in plain if user==cfg['user'][0]['name']),None)
         if first:plain.append(('rescue:'+rescue.get('username','root'),first))
     return plain
-def apply(root,cfg,root_uuid,esp_uuid,repo):
+def apply(root,cfg,root_uuid,esp_uuid,repo,firstboot=False):
     root,repo=Path(root),Path(repo)
     def ch(*args):subprocess.run(['chroot',str(root),*args],check=True,stdout=subprocess.DEVNULL)
     b=cfg['board'];ssh=cfg['ssh']
@@ -35,7 +35,13 @@ def apply(root,cfg,root_uuid,esp_uuid,repo):
     write(root,'etc/default/locale','LANG='+b['locale']+'\n')
     write(root,'etc/locale.gen',b['locale']+' UTF-8\n' if b['locale']!='C.UTF-8' else '');ch('locale-gen')
     for u in cfg['user']:
-        ch('useradd','-m','-s','/bin/bash','-G',','.join(u['groups']),u['name'])
+        exists = subprocess.run(['chroot',str(root),'getent','passwd',u['name']], stdout=subprocess.DEVNULL).returncode == 0
+        if not exists:
+            ch('useradd','-m','-s','/bin/bash','-G',','.join(u['groups']),u['name'])
+        elif firstboot:
+            ch('usermod','-s','/bin/bash','-G',','.join(u['groups']),u['name'])
+        else:
+            raise ValueError('user already exists in fresh build')
         if u.get('password_hash'):
             subprocess.run(['chroot',str(root),'chpasswd','-e'],input=u['name']+':'+u['password_hash']+'\n',text=True,check=True)
         else:ch('usermod','-L',u['name'])
@@ -91,6 +97,8 @@ def apply(root,cfg,root_uuid,esp_uuid,repo):
     resolver=root/'etc/resolv.conf'
     if resolver.exists() or resolver.is_symlink():resolver.unlink()
     resolver.symlink_to('/run/systemd/resolve/stub-resolv.conf')
+    if firstboot:
+        return  # Preserve the identity established during this boot and on retries.
     for p in (root/'etc/ssh').glob('ssh_host_*'):p.unlink()
     write(root,'etc/machine-id','')
     dbus=root/'var/lib/dbus/machine-id'

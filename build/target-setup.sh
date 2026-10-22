@@ -30,10 +30,11 @@ apt-get install -y linux-image-arm64
 # debootstrap's simple dependency resolver cannot resolve the virtual D-Bus
 # session bus and versioned RE2 provider needed by this multimedia stack.
 # Install it with APT after the base system is configured, as on the board.
-vpu_enabled=$(python3 -c 'import json,os; c=json.load(open(os.environ["BUILD_SETTINGS"]))["config"]; print(int(c["os"]["features"].get("vpu",True) is not False))')
-if [ "$vpu_enabled" = 1 ]; then
-    apt-get install -y --no-install-recommends gstreamer1.0-tools \
-        gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
+vpu_packages=$(PYTHONPATH=/src/src python3 -m percept.packages "$BUILD_SETTINGS")
+if [ -n "$vpu_packages" ]; then
+    # Names come from the fixed package allowlist, not arbitrary user input.
+    read -r -a runtime_packages <<< "$vpu_packages"
+    apt-get install -y --no-install-recommends "${runtime_packages[@]}"
 fi
 release=$(find /lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
 case "$release" in 6.12.*-arm64) ;; *) echo "unsupported installed kernel $release" >&2; exit 1 ;; esac

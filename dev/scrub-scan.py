@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 MAX_BYTES = 1_000_000
-SKIP_DIRS = {".git", "__pycache__", "cache", "out", "boards", "node_modules"}
+SKIP_DIRS = {".git", "__pycache__", "cache", "out", "boards", "node_modules", ".venv"}
 SKIP_FILES = {"scrub-scan.py"}  # holds the patterns themselves
 
 # (name, regex). Case-insensitive unless noted in the pattern.

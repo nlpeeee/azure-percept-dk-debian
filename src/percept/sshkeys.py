@@ -73,3 +73,22 @@ def check_key(line):
             warn = "RSA key is %d bits; ed25519 or RSA >= 3072 is recommended" % bits
     parts = line.strip().split(None, 2)
     return " ".join(parts[:2] + ([comment] if comment else [])), warn
+def generate_key(path, password):
+    """Generate a PC key without a console dependency; never overwrite a key."""
+    import os
+    from pathlib import Path
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+    from .config import restrict_permissions
+    path=Path(path)
+    if path.exists() or Path(str(path)+'.pub').exists():
+        raise FileExistsError('key already exists; select its public key instead')
+    key=Ed25519PrivateKey.generate()
+    encryption=serialization.BestAvailableEncryption(password.encode()) if password else serialization.NoEncryption()
+    private=key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.OpenSSH,encryption)
+    public=key.public_key().public_bytes(serialization.Encoding.OpenSSH,serialization.PublicFormat.OpenSSH)+b'\n'
+    path.parent.mkdir(parents=True,exist_ok=True)
+    for target,value in ((path,private),(Path(str(path)+'.pub'),public)):
+        with os.fdopen(os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'wb') as stream:stream.write(value)
+        restrict_permissions(str(target))
+    return public.decode().strip()

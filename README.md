@@ -52,6 +52,12 @@ been tested yet - please report results ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Quick start (Windows + WSL2 or Linux)
 
+The new [two-path installer](docs/portable-installer.md) supports generic bundles:
+build your own with `--target bundle`, then prepare locally without WSL using
+`percept prepare`, or use the desktop wizard with `percept gui`. Windows/Linux
+application packaging is available; generic first-boot hardware qualification
+and public release signing-key setup remain pending.
+
 Start with `python percept setup --board my-percept` for saved-settings review.
 Follow the [guided installation](docs/install.md) through source synchronization,
 build selection, physical USB recovery and first login.

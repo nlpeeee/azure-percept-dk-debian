@@ -13,6 +13,20 @@ from test_cli_end_to_end import Scripted, wizard_answers, run_cli, CANARY_PW, CA
 
 
 class SetupUX(unittest.TestCase):
+    def test_import_preserves_original_and_refuses_saved_name_collision(self):
+        from percept import config
+        with tempfile.TemporaryDirectory() as source,tempfile.TemporaryDirectory() as destination:
+            cfg=helpers.minimal_cfg()
+            source_folder=Path(configure.write_board(source,cfg))
+            before={p.name:p.read_bytes() for p in source_folder.iterdir()}
+            name=configure.import_board(destination,source_folder)
+            self.assertEqual(name,cfg['board']['name'])
+            self.assertEqual(before,{p.name:p.read_bytes() for p in source_folder.iterdir()})
+            target=Path(destination)/'boards'/name
+            saved={p.name:p.read_bytes() for p in target.iterdir()}
+            with self.assertRaises(config.ConfigError):configure.import_board(destination,source_folder)
+            self.assertEqual(saved,{p.name:p.read_bytes() for p in target.iterdir()})
+
     def test_explicit_name_is_not_prompted_or_overridden(self):
         with tempfile.TemporaryDirectory() as home:
             answers = Scripted(wizard_answers()[1:])
@@ -66,7 +80,7 @@ class SetupUX(unittest.TestCase):
             for count in (0, 2):
                 output='\n'.join(['1:2 SDP: 0x1fc9 0x012b']*count)
                 with patch.object(flash, 'verify_manifest', return_value=({},script)), \
-                     patch.object(flash.subprocess, 'run', return_value=SimpleNamespace(stdout=output)) as run:
+                     patch.object(flash.subprocess, 'run', return_value=SimpleNamespace(stdout=output, returncode=0)) as run:
                     with self.assertRaisesRegex(ValueError, 'Nothing was flashed'):
                         flash.flash(tmp, 'unused', 'unit', str(tool), lambda _: self.fail('confirmation before detection'))
                     self.assertEqual(run.call_count, 1)
@@ -76,7 +90,7 @@ class SetupUX(unittest.TestCase):
             tool=Path(tmp)/'uuu.exe';tool.touch()
             script=Path(tmp)/'unit-PERSONAL.uuu'
             with patch.object(flash, 'verify_manifest', return_value=({},script)), \
-                 patch.object(flash.subprocess, 'run', return_value=SimpleNamespace(stdout='1:2 SDP: 0x1fc9 0x012b')) as run:
+                 patch.object(flash.subprocess, 'run', return_value=SimpleNamespace(stdout='1:2 SDP: 0x1fc9 0x012b', returncode=0)) as run:
                 with self.assertRaisesRegex(ValueError, 'cancelled'):
                     flash.flash(tmp, 'unused', 'unit', str(tool), lambda _: 'no')
                 self.assertEqual(run.call_count, 1)

@@ -61,6 +61,13 @@ def run(args, root, pr=None):
         if result.config['install']['method'] != 'uuu':
             pr.out("SSH conversion is not implemented. Select install.method = \"uuu\" for the USB installer.")
             return 1
+        import sys
+        executable='"'+sys.executable+'"' if getattr(sys,'frozen',False) else 'python percept'
+        if getattr(args,'mode','prepare' if getattr(sys,'frozen',False) else 'build') == 'prepare':
+            pr.out('\nNext: '+executable+' doctor --mode installer')
+            pr.out(executable+' prepare --board '+name+' --bundle PATH.bundle.tar.gz --trust-local')
+            pr.out('Or select a signed release with --release VERSION. WSL is not required for preparation.')
+            return 0
         pr.out("\nNext, from the Windows repository:")
         pr.out("  python percept doctor")
         pr.out("  python percept fetch")

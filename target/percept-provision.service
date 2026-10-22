@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Unit]
+Description=Apply local Percept installation settings
+DefaultDependencies=no
+RequiresMountsFor=/boot/efi
+After=local-fs.target systemd-remount-fs.service
+Before=sysinit.target network-pre.target ssh.service getty.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/percept-provision
+RemainAfterExit=yes
+TimeoutStartSec=300
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -6,4 +6,8 @@ import sys
 from .overlay import apply
 if __name__=='__main__':
     c=json.loads(Path(sys.argv[1]).read_text())
-    apply(sys.argv[2],c['config'],c['root_uuid'],c['esp_uuid'],sys.argv[3])
+    if c.get('generic'):
+        from percept.provision import install_generic
+        install_generic(sys.argv[2],c['config'],c['root_uuid'],c['esp_uuid'],sys.argv[3])
+    else:
+        apply(sys.argv[2],c['config'],c['root_uuid'],c['esp_uuid'],sys.argv[3])

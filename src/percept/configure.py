@@ -72,6 +72,7 @@ def _key_check(value):
 
 
 def pick_ssh_key(pr, name, home=None, keygen=shutil.which("ssh-keygen"), allow_skip=False):
+    keygen = keygen or getattr(pr, 'generate_key', None)
     pr.out("Keys are optional when password login is enabled. Only public keys go on the board.")
     pr.out("An encrypted PC private key needs its passphrase for interactive SSH; unattended checks need it loaded with ssh-add first.")
     keys = find_public_keys(home)
@@ -95,7 +96,10 @@ def pick_ssh_key(pr, name, home=None, keygen=shutil.which("ssh-keygen"), allow_s
             path = os.path.join(home or os.path.expanduser("~"), ".ssh", "percept_%s_ed25519" % name)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             pr.out("Generating %s (you will be asked for a passphrase; a passphrase is recommended)." % path)
-            subprocess.run([keygen, "-t", "ed25519", "-f", path, "-C", "percept-" + name], check=False)
+            if getattr(pr, 'generate_key', None):
+                pr.generate_key(path)
+            else:
+                subprocess.run([keygen, "-t", "ed25519", "-f", path, "-C", "percept-" + name], check=False)
             try:
                 with open(path + ".pub", encoding="utf-8") as f:
                     return f.read().strip()
@@ -196,7 +200,7 @@ def run_wizard(pr, home=None, defaults_name=None):
     cfg["os"] = {"cpu_profile": pr.choose("CPU profile: unchanged, rated 800/1300 MHz, experimental oc1500", ["unchanged", "rated", "oc1500"], "unchanged")}
 
     # --- install ---------------------------------------------------------
-    method = pr.choose("How will you install: uuu = flash a new image over USB, ssh = convert a board that already runs Linux",
+    method = pr.choose("How will you install: uuu = flash over USB, ssh = conversion (not implemented yet)",
                        ["uuu", "ssh"], "uuu")
     cfg["install"] = {"method": method}
     if method == "ssh":
@@ -227,3 +231,16 @@ def write_board(root, cfg, force=False):
     elif os.path.exists(sp):
         os.remove(sp)
     return d
+
+
+def import_board(root, directory):
+    """Copy saved settings without modifying the source or replacing a saved board."""
+    directory=os.path.abspath(directory)
+    cfg=cfgmod.absolutize_file_refs(cfgmod.load_board(directory),directory)
+    result=validate.validate(cfg,directory)
+    if not result.ok:
+        from .redact import Redactor, collect_secrets
+        red=Redactor(collect_secrets(cfg))
+        raise cfgmod.ConfigError('Imported settings are invalid: '+red('; '.join(result.errors)))
+    write_board(root,cfg,force=False)
+    return cfg['board']['name']

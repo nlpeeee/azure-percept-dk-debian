@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: MIT
+name: installer-candidates
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      matrix:
+        os: [windows-2022, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk binutils libusb-1.0-0 libbz2-1.0 libzstd1
+      - run: python -m pip install -r requirements-installer.txt
+      - run: python -m unittest discover -s tests/unit -v
+      - run: python dev/scrub-scan.py
+      - name: Package native candidate (no publishing)
+        shell: python
+        run: |
+          import os, subprocess, sys
+          sys.path.insert(0,'src')
+          from percept.build.pipeline import inputs, download
+          key='uuu-1.5.243' if os.name=='nt' else 'uuu-linux-1.5.243'
+          item=inputs('.')[key]
+          path=download(item,'cache/tools/uuu.exe' if os.name=='nt' else 'cache/tools/uuu')
+          path.chmod(0o755)
+          subprocess.run([sys.executable,'dev/package-installer.py','--uuu',str(path),
+                          '--uuu-sha256',item['sha256']],check=True)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: percept-${{ runner.os }}-x64-candidate
+          path: |
+            out/application/*-candidate.zip
+            out/application/*.sha256

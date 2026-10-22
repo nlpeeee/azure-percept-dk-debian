@@ -52,6 +52,10 @@ been tested yet - please report results ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Quick start (Windows + WSL2 or Linux)
 
+Start with `python percept setup --board my-percept` for saved-settings review.
+Follow the [guided installation](docs/install.md) through source synchronization,
+build selection, physical USB recovery and first login.
+
 Requirements: the Azure Percept DK, a USB-C cable, ~30 GB free disk, Python 3.9+.
 On Windows install WSL2 with a Debian/Ubuntu distro first (`wsl --install`).
 
@@ -75,8 +79,8 @@ and are injected into the image you build. See
 ## Recovery
 
 You can always return to the factory image over USB with Microsoft's recovery
-package: [docs/recovery.md](docs/recovery.md). If a boot goes wrong, the board
-falls back to SSH rescue mode on its own after three failed boots.
+package: [docs/recovery.md](docs/recovery.md). The launcher is designed to enter SSH rescue after repeated boot failures;
+rescue fallback still needs hardware qualification for the new installer.
 
 ## Repository map
 

@@ -51,6 +51,10 @@ def _print_result(res, out=print):
     return red
 
 
+def cmd_setup(args, root):
+    from . import setup
+    return setup.run(args, root)
+
 def cmd_doctor(args, root):
     checks = doctor.run_all(root)
     print(doctor.format_checks(checks))
@@ -70,6 +74,8 @@ def cmd_configure(args, root):
         pr = configure.Prompter()
         cfg = configure.run_wizard(pr, defaults_name=args.name)
         base = root
+    if args.name:
+        cfg.setdefault("board", {})["name"] = args.name
     res = validate.validate(cfg, base)
     red = _print_result(res)
     if not res.ok:
@@ -181,9 +187,11 @@ def build_parser():
     ap.add_argument("--version", action="version", version="percept " + __version__)
     sub = ap.add_subparsers(dest="cmd", metavar="command")
 
+    setup = sub.add_parser("setup", help="create or reuse settings, review them and show the installation steps")
+    setup.add_argument("--board", help="saved board name, or name for a new board")
     sub.add_parser("doctor", help="check this PC (and WSL2) and print fixes")
     c = sub.add_parser("configure", help="ask for your settings and write boards/<name>/")
-    c.add_argument("--name", help="suggested board name")
+    c.add_argument("--name", help="exact board folder name (hostname is configured separately)")
     c.add_argument("--from", dest="from_file", metavar="FILE", help="read settings from a TOML file instead of asking")
     c.add_argument("--force", action="store_true", help="overwrite an existing board")
     v = sub.add_parser("validate", help="check a board's settings")
@@ -243,12 +251,15 @@ def main(argv=None):
             print("error: " + str(exc))
             return 1
     handler = {
-        "doctor": cmd_doctor, "configure": cmd_configure, "validate": cmd_validate, "show": cmd_show,
+        "setup": cmd_setup, "doctor": cmd_doctor, "configure": cmd_configure, "validate": cmd_validate, "show": cmd_show,
         "launcher-conf": cmd_launcher_conf, "profile": cmd_profile, "hash-password": cmd_hash_password,
         "config-doc": cmd_config_doc,
     }[args.cmd]
     try:
         return handler(args, repo_root())
+    except cfgmod.ConfigError as exc:
+        print("error: " + str(exc))
+        return 1
     except KeyboardInterrupt:
         print("\ninterrupted")
         return 130

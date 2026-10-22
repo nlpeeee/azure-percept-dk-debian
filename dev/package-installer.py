@@ -57,6 +57,7 @@ for gui,name in ((False,'percept'),(True,'PerceptInstaller')):
     command=[sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onedir','--name',name,
         '--paths',str(ROOT/'src'),'--collect-all','pyfatfs','--collect-all','fs',
         '--hidden-import','cryptography.hazmat.primitives.asymmetric.ed25519',
+        '--hidden-import','bcrypt',
         '--hidden-import','tkinter','--hidden-import','tkinter.ttk',
         '--add-data',str(resources)+':percept-resources',
         '--distpath',str(a.output/'dist'),'--workpath',str(a.output/'pyinstaller-work'),

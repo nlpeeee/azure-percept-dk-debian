@@ -187,6 +187,19 @@ except ImportError:EXTRAS=False
 
 @unittest.skipUnless(EXTRAS,'install requirements-installer.txt for portable filesystem/signature tests')
 class WithDependencies(unittest.TestCase):
+    def test_encrypted_key_generation_and_overwrite_protection(self):
+        from percept import sshkeys
+        from cryptography.hazmat.primitives.serialization import load_ssh_private_key
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'synthetic-key'
+            public=sshkeys.generate_key(path,'synthetic-passphrase')
+            sshkeys.check_key(public)
+            load_ssh_private_key(path.read_bytes(),b'synthetic-passphrase')
+            with self.assertRaises(ValueError):load_ssh_private_key(path.read_bytes(),b'wrong-passphrase')
+            before=path.read_bytes()
+            with self.assertRaises(FileExistsError):sshkeys.generate_key(path,'different-passphrase')
+            self.assertEqual(path.read_bytes(),before)
+
     def test_signed_release_chain_authenticates_before_download(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'release').mkdir()

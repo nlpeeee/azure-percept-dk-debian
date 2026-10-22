@@ -58,19 +58,13 @@ def main(repo, smoke=False):
         if value is None: raise InterruptedError('configuration cancelled')
         return value
     def generate_key(path):
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-        from cryptography.hazmat.primitives import serialization
+        from . import sshkeys
         if Path(path).exists() or Path(path+'.pub').exists():
             raise ValueError('This key file already exists. Select the existing public key instead.')
         password=secret('Passphrase for the new PC SSH key (leave empty only if intended): ')
         if password and password!=secret('Repeat SSH key passphrase: '):
             raise ValueError('SSH key passphrases differ; no key was written.')
-        key=Ed25519PrivateKey.generate()
-        encryption=serialization.BestAvailableEncryption(password.encode()) if password else serialization.NoEncryption()
-        private=key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.OpenSSH,encryption)
-        public=key.public_key().public_bytes(serialization.Encoding.OpenSSH,serialization.PublicFormat.OpenSSH)
-        config.write_private(path,private.decode())
-        config.write_private(path+'.pub',public.decode()+'\n')
+        sshkeys.generate_key(path,password)
     def load_settings():
         if state['busy']: return None
         name=board.get().strip()

@@ -153,7 +153,7 @@ def run_all(repo_root=".", runner=wsl.run, which=shutil.which, kind=None, linux_
 def run_installer(repo_root):
     """Check the fast path without probing USB, starting WSL or downloading files."""
     out = [check_python(), check_disk(repo_root)]
-    for module in ('pyfatfs', 'cryptography'):
+    for module in ('pyfatfs', 'cryptography', 'bcrypt'):
         try:
             __import__(module)
             out.append(_ok(module))

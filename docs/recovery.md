@@ -1,5 +1,9 @@
 # Percept restore point
 
+For installer USB entry and the original Microsoft restoration fallback, see
+[guided installation](install.md#enter-usb-recovery-and-flash). The notes below
+describe an engineering restore point, not a general-purpose recovery wizard.
+
 Before the boot experiments, `tools/capture_percept_restore_point.sh` captures
 the boot areas, both EFI-sized partitions, primary/secondary GPT bytes, partition
 layout, network/service/container inventory and a file-level root filesystem

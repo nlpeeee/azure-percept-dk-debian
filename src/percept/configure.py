@@ -72,6 +72,8 @@ def _key_check(value):
 
 
 def pick_ssh_key(pr, name, home=None, keygen=shutil.which("ssh-keygen"), allow_skip=False):
+    pr.out("Keys are optional when password login is enabled. Only public keys go on the board.")
+    pr.out("An encrypted PC private key needs its passphrase for interactive SSH; unattended checks need it loaded with ssh-add first.")
     keys = find_public_keys(home)
     if keys:
         pr.out("SSH public keys found on this PC:")
@@ -105,8 +107,14 @@ def pick_ssh_key(pr, name, home=None, keygen=shutil.which("ssh-keygen"), allow_s
 def run_wizard(pr, home=None, defaults_name=None):
     """Ask the questions; return a (not yet validated) config dict."""
     pr.out("Percept DK setup. Press Enter to accept the value in [brackets].\n")
-    name = pr.ask("Name for this board (used for the folder boards/<name>)", defaults_name or "percept-1",
-                  lambda v: None if validate.NAME_RE.match(v) else "lowercase letters, digits, - and _ only")
+    if defaults_name is not None:
+        if not validate.NAME_RE.fullmatch(defaults_name):
+            raise cfgmod.ConfigError("board name: lowercase letters, digits, - and _ only")
+        name = defaults_name
+        pr.out("Board folder: boards/%s (selected by --name)" % name)
+    else:
+        name = pr.ask("Name for this board (used for the folder boards/<name>)", "percept-1",
+                      lambda v: None if validate.NAME_RE.fullmatch(v) else "lowercase letters, digits, - and _ only")
     cfg = {"schema": 1, "board": {"name": name}}
     cfg["board"]["hostname"] = pr.ask("Hostname", name,
                                       lambda v: None if validate.HOST_RE.match(v) else "not a valid hostname")

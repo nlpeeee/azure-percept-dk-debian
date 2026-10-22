@@ -11,8 +11,33 @@ import shutil
 import subprocess
 import urllib.request
 import uuid
+import time
+import threading
+from contextlib import contextmanager
 from .. import launcher_conf, profiles, redact, tomlmini
 from . import gpt, overlay
+
+@contextmanager
+def progress(label):
+    """Report elapsed time without exposing subprocess arguments or settings."""
+    started = time.monotonic()
+    stop = threading.Event()
+    def report():
+        while not stop.wait(30):
+            print('%s: still working (%ds elapsed)' % (label, time.monotonic()-started), flush=True)
+    thread = threading.Thread(target=report, daemon=True)
+    print(label + ': starting', flush=True)
+    thread.start()
+    try:
+        yield
+    except BaseException:
+        print(label + ': interrupted or failed; see the error and private build log.', flush=True)
+        raise
+    else:
+        print('%s: complete (%ds)' % (label, time.monotonic()-started), flush=True)
+    finally:
+        stop.set()
+        thread.join()
 
 def sha(path):
     h=hashlib.sha256()
@@ -28,7 +53,7 @@ def download(item,dest):
     if not item.get('sha256'):raise ValueError('download is not hash-pinned: '+item['id'])
     if not dest.exists():
         partial=dest.with_suffix(dest.suffix+'.part')
-        with urllib.request.urlopen(item['url'],timeout=120) as src, partial.open('wb') as out:shutil.copyfileobj(src,out)
+        with progress('Download '+item['id']), urllib.request.urlopen(item['url'],timeout=120) as src, partial.open('wb') as out:shutil.copyfileobj(src,out)
         if sha(partial)!=item['sha256']:
             partial.unlink();raise ValueError('download hash mismatch: '+item['id'])
         partial.replace(dest)
@@ -53,6 +78,7 @@ def build(repo,cfg):
     commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip()
     name=cfg['board']['name'];stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     out=repo/'out'/name/stamp;out.mkdir(parents=True,exist_ok=False);out.chmod(0o700)
+    print('Build output: '+str(out)+'; incomplete until a PERSONAL.manifest.json exists.', flush=True)
     work=out/'work';work.mkdir(mode=0o700)
     generated=overlay.credentials(cfg)
     if generated:private(out/'credentials.txt',''.join(user+': '+pw+'\n' for user,pw in generated))
@@ -60,7 +86,7 @@ def build(repo,cfg):
     log=out/'build.log'
     def run(argv):
         print('Build stage: '+Path(str(argv[0])).name+' '+(Path(str(argv[1])).name if len(argv)>1 else ''),flush=True)
-        with log.open('a') as logfile:
+        with progress('Build '+Path(str(argv[0])).name), log.open('a') as logfile:
             log.chmod(0o600)
             proc=subprocess.Popen([str(x) for x in argv],cwd=repo,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,env=dict(os.environ,PYTHONPATH=str(repo/'src')))
             for line in proc.stdout:logfile.write(red(line));logfile.flush()
@@ -139,4 +165,5 @@ def build(repo,cfg):
     private(out/'SHA256SUMS',''.join(sha(p)+'  '+p.name+'\n' for p in (disk,firmware,flash,manifest_path)))
     settings.unlink()
     print('Personal installer built: '+str(out))
+    print('Completed manifest: '+str(manifest_path)+' (build completion, not hardware qualification)')
     return out

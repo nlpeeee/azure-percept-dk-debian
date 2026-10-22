@@ -4,12 +4,19 @@ Windows is the source checkout; the WSL checkout is a separate build copy.
 Only committed changes transfer through Git. Local board settings, downloads
 and outputs are ignored by Git and do not transfer with a pull.
 
+For the guided setup, physical DIP-switch instructions and first-login checks,
+start with [install.md](install.md).
+
 ## Synchronize source
 
 Commit reviewed files in the Windows checkout, then in WSL:
 
     cd ~/azure-percept-dk-debian
-    git pull --ff-only origin main
+    git fetch /mnt/e/azure-percept-dk-debian HEAD
+    git merge --ff-only FETCH_HEAD
+
+Adapt the Windows path. Check WSL has no local source changes first. No public
+push is needed; stop and resolve any divergence if fast-forward fails.
 
 The build command checks that Windows and WSL have the same source commit.
 Use WSL's Linux filesystem for builds, preserving ownership and symlinks.
@@ -93,7 +100,8 @@ acceptance steps. Use the established Microsoft factory restoration procedure.
 
 ## Flash from Windows
 
-Connect the board in the established USB recovery mode. Keep its data backup
+Enter USB recovery using the internal DIP block as described in
+[install.md](install.md#enter-usb-recovery-and-flash). Keep its data backup
 and original Microsoft restoration package available. Then:
 
     python percept flash --board my-percept --manifest PATH-TO-PERSONAL.manifest.json

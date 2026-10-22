@@ -277,7 +277,7 @@ def validate(cfg, base_dir=".", env=None):
     if users and not ssh_path:
         res.err("user", "no way to log in: give a user an SSH public key (recommended) or enable ssh.password_auth with a password")
     if s["password_auth"]:
-        res.warn("ssh.password_auth", "password logins over SSH are weaker than keys")
+        res.warn("ssh.password_auth", "password login is enabled (supported); use a unique password and a trusted network")
 
     # --- ethernet ----------------------------------------------------------
     e = c["network"]["ethernet"]

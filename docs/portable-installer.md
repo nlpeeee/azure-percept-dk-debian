@@ -21,6 +21,10 @@ macOS remains unqualified.
    Review the summary before preparation. The settings editor can update saved
    settings; secrets.toml is private. An encrypted private SSH key stays on your
    PC and needs its passphrase or a working SSH agent for login.
+   Use **Import settings** to copy an existing board.toml together with its
+   secrets.toml into the application's saved boards. Existing names are never
+   overwritten, and the source files are preserved. References to local public-key
+   and secret files retain absolute paths to their originals.
 3. Supply the original pinned Microsoft recovery ZIP or allow its download from
    Microsoft. The application combines it locally with the generic bundle.
    Microsoft boot files are excluded from public bundles. Cached verified inputs
@@ -36,6 +40,15 @@ macOS remains unqualified.
 6. After successful flashing, power off, restore 1001, and power on. First boot
    applies settings before network/login services, expands storage, and generates
    unique host keys. Allow several minutes and use the chosen network address.
+
+On Linux, USB access needs an active desktop-session ACL or an appropriate udev
+rule. If detection or flashing reports access denied, install the rules described
+in the [official uuu guide](https://github.com/nxp-imx/mfgtools/wiki/UUU), reload
+udev rules, and reconnect the device before retrying. The bundled uuu source and
+upstream instructions accompany the candidate. Do not run the entire settings
+application as root. On Windows, confirm the USB recovery device appears in
+Device Manager and follow the original recovery package's driver instructions
+if its driver is missing; keep the board's recovery-mode and cable checks separate.
 
 Source CLI equivalents (packaged CLI omits `python`):
 

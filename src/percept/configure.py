@@ -231,3 +231,16 @@ def write_board(root, cfg, force=False):
     elif os.path.exists(sp):
         os.remove(sp)
     return d
+
+
+def import_board(root, directory):
+    """Copy saved settings without modifying the source or replacing a saved board."""
+    directory=os.path.abspath(directory)
+    cfg=cfgmod.absolutize_file_refs(cfgmod.load_board(directory),directory)
+    result=validate.validate(cfg,directory)
+    if not result.ok:
+        from .redact import Redactor, collect_secrets
+        red=Redactor(collect_secrets(cfg))
+        raise cfgmod.ConfigError('Imported settings are invalid: '+red('; '.join(result.errors)))
+    write_board(root,cfg,force=False)
+    return cfg['board']['name']

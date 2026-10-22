@@ -13,6 +13,20 @@ from test_cli_end_to_end import Scripted, wizard_answers, run_cli, CANARY_PW, CA
 
 
 class SetupUX(unittest.TestCase):
+    def test_import_preserves_original_and_refuses_saved_name_collision(self):
+        from percept import config
+        with tempfile.TemporaryDirectory() as source,tempfile.TemporaryDirectory() as destination:
+            cfg=helpers.minimal_cfg()
+            source_folder=Path(configure.write_board(source,cfg))
+            before={p.name:p.read_bytes() for p in source_folder.iterdir()}
+            name=configure.import_board(destination,source_folder)
+            self.assertEqual(name,cfg['board']['name'])
+            self.assertEqual(before,{p.name:p.read_bytes() for p in source_folder.iterdir()})
+            target=Path(destination)/'boards'/name
+            saved={p.name:p.read_bytes() for p in target.iterdir()}
+            with self.assertRaises(config.ConfigError):configure.import_board(destination,source_folder)
+            self.assertEqual(saved,{p.name:p.read_bytes() for p in target.iterdir()})
+
     def test_explicit_name_is_not_prompted_or_overridden(self):
         with tempfile.TemporaryDirectory() as home:
             answers = Scripted(wizard_answers()[1:])

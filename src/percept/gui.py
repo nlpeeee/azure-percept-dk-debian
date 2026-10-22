@@ -25,6 +25,8 @@ def main(repo, smoke=False):
     line = ttk.Frame(frame); line.pack(fill='x', pady=4)
     ttk.Label(line,text='Board configuration',width=22).pack(side='left')
     ttk.Combobox(line,textvariable=board,values=saved).pack(side='left',fill='x',expand=True)
+    import_button=ttk.Button(line,text='Import settings',command=lambda: import_settings())
+    import_button.pack(side='left',padx=(6,0))
     def file_row(label, variable, select):
         row=ttk.Frame(frame);row.pack(fill='x',pady=4)
         ttk.Label(row,text=label,width=22).pack(side='left')
@@ -89,6 +91,16 @@ def main(repo, smoke=False):
     def configure_click():
         try: load_settings()
         except (ValueError,config.ConfigError,OSError,InterruptedError) as exc: messagebox.showerror('Settings',str(exc),parent=root)
+    def import_settings():
+        if state['busy']:return
+        chosen=filedialog.askopenfilename(title='Select board.toml from an existing saved board',filetypes=[('Board settings','board.toml')])
+        if not chosen:return
+        try:
+            if Path(chosen).name!='board.toml':raise ValueError('Select the saved board.toml file.')
+            name=configure.import_board(repo,Path(chosen).parent)
+            board.set(name);load_settings()
+            append('Imported a copy. The original settings were preserved.')
+        except (OSError,ValueError,config.ConfigError) as exc:messagebox.showerror('Import settings',str(exc),parent=root)
     def edit_settings():
         if state['busy']: return
         try:
@@ -169,6 +181,7 @@ def main(repo, smoke=False):
                     child.configure(state='disabled' if state['busy'] else 'normal')
                 inputs(child)
         inputs(frame)
+        import_button.configure(state='disabled' if state['busy'] else 'normal')
         for button in buttons: button.configure(state='disabled' if state['busy'] else 'normal')
         buttons[-1].configure(state='normal' if not state['busy'] and state['manifest'] else 'disabled')
         cancel_button.configure(state='normal' if state['busy'] and state.get('phase')=='prepare' else 'disabled')

@@ -21,6 +21,9 @@ p.add_argument('--output',type=Path,default=ROOT/'out/application')
 a=p.parse_args()
 a.output=a.output.resolve()
 a.uuu=a.uuu.resolve()
+commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+if subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip():
+    p.error('commit reviewed application source before packaging')
 if platform.system() not in ('Windows','Linux') or platform.machine().lower() not in ('amd64','x86_64'):
     p.error('v1 packages support Windows/Linux x64')
 if a.output.exists(): p.error('output already exists; choose a fresh directory')
@@ -76,7 +79,8 @@ for name in ('install.md','build-wsl.md','configuration.md'):
     shutil.copy2(ROOT/'docs'/name,documentation/name)
 inventory=subprocess.check_output([sys.executable,'-m','pip','freeze'],text=True)
 (a.output/'dist/python-dependencies.txt').write_text(inventory,encoding='utf-8')
-commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+if subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()!=commit or subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip():
+    raise RuntimeError('source changed while packaging; choose a fresh output directory and retry')
 (a.output/'dist/application-build.json').write_text(json.dumps({'schema':1,'source_commit':commit,
     'platform':key,'python':platform.python_version(),'uuu_version':'1.5.243','uuu_sha256':sha(tool),
     'qualification':{'native_smoke':'pending','clean_machine':'pending','hardware':'pending'}},indent=2)+'\n',encoding='utf-8')

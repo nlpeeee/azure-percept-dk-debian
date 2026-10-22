@@ -1,9 +1,15 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 set -euo pipefail
-# Debian mirrors provide Architecture: all; debootstrap's foreign stage does
-# not preserve this flag for dependency/progress handling in its second stage.
-export DEBIAN_FRONTEND=noninteractive LC_ALL=C ARCH_ALL_SUPPORTED=1
+# Foreign debootstrap does not preserve this first-stage decision. Debian can
+# advertise Architecture: all while explicitly keeping those packages in the
+# per-architecture indexes. Follow the indexes actually staged, not that header.
+export DEBIAN_FRONTEND=noninteractive LC_ALL=C
+ARCH_ALL_SUPPORTED=0
+for index in /var/lib/apt/lists/*_binary-all_Packages; do
+    if [ -f "$index" ]; then ARCH_ALL_SUPPORTED=1; break; fi
+done
+export ARCH_ALL_SUPPORTED
 printf '#!/bin/sh\nexit 101\n' >/usr/sbin/policy-rc.d
 chmod 755 /usr/sbin/policy-rc.d
 /debootstrap/debootstrap --second-stage

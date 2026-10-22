@@ -67,7 +67,12 @@ for name in ('LICENSE','NOTICE.md','LICENSES'):
     src=ROOT/name;dst=a.output/'dist'/name
     if src.is_dir():shutil.copytree(src,dst)
     else:shutil.copy2(src,dst)
-shutil.copy2(ROOT/'docs/portable-installer.md',a.output/'dist/INSTALL.md')
+guide=(ROOT/'docs/portable-installer.md').read_text(encoding='utf-8')
+guide=guide.replace('](install.md','](docs/install.md').replace('](build-wsl.md','](docs/build-wsl.md')
+(a.output/'dist/INSTALL.md').write_text(guide,encoding='utf-8')
+documentation=a.output/'dist/docs';documentation.mkdir()
+for name in ('install.md','build-wsl.md','configuration.md'):
+    shutil.copy2(ROOT/'docs'/name,documentation/name)
 inventory=subprocess.check_output([sys.executable,'-m','pip','freeze'],text=True)
 (a.output/'dist/python-dependencies.txt').write_text(inventory,encoding='utf-8')
 commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()

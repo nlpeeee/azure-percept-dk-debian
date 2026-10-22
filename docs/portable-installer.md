@@ -40,7 +40,8 @@ macOS remains unqualified.
 Source CLI equivalents (packaged CLI omits `python`):
 
 ```text
-python percept setup --board my-percept
+python percept setup --board my-percept --mode prepare
+python percept doctor --mode installer
 python percept prepare --board my-percept --bundle PATH.bundle.tar.gz --trust-local --recovery PATH.zip
 python percept prepare --board my-percept --release VERSION
 python percept flash --board my-percept --manifest PATH-PRINTED-BY-PREPARE
@@ -114,7 +115,10 @@ each CPU variant. Build completion never changes hardware_tested to true.
 
 ## Maintainer packaging and signatures
 
-Install requirements-installer.txt in an isolated Python environment. Build on
+Use Python 3.13 and install requirements-installer.txt in an isolated environment.
+Linux packagers also need binutils, a Python shared library, Tk/Tcl development
+runtime and a desktop/font environment; these are packaging prerequisites, not
+requirements for end users of the packaged application. Build on
 each native OS; PyInstaller does not cross-compile. Use a reviewed uuu 1.5.243
 binary and its digest:
 
@@ -145,3 +149,13 @@ git diff --check
 Install installer requirements to exercise FAT and Ed25519 tests. On Linux run
 the suite to exercise Unix permissions, service staging and shell behavior too.
 Clean-machine preparation tests and real-board qualification remain release gates.
+
+For the destructive offline integration test, use a disposable copy of a generic
+root inside private mapped-user and mount namespaces with private /dev and /proc.
+Run `tests/generic-firstboot-offline.py --disposable-root PATH`, then verify its
+systemd service graph with `systemd-analyze --root=PATH --man=no verify` for
+percept-provision.service, ssh.service, systemd-networkd.service and
+percept-boot-ok.service. Treat any ordering-cycle diagnostic as a failure even
+if systemd-analyze exits successfully. Never point this test at a live or personal
+root. It exercises interruption after account creation, retry and identity
+preservation; it does not replace booting the new image on the board.

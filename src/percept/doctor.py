@@ -79,7 +79,7 @@ def check_windows_side(runner=wsl.run, which=shutil.which, repo_root="."):
     if uuu or os.path.isfile(cached):
         out.append(_ok("uuu", uuu or cached))
     else:
-        out.append(_warn("uuu", "not found yet", "'percept fetch' downloads it (needed only to flash)"))
+        out.append(_warn("uuu", "not found yet", "'percept flash' downloads it (needed only to flash)"))
     out.append(_ok("ssh", which("ssh") or which("ssh.exe")) if (which("ssh") or which("ssh.exe")) else
                _warn("ssh", "OpenSSH client not found", "Settings > Apps > Optional features > OpenSSH Client"))
     return out
@@ -147,6 +147,28 @@ def run_all(repo_root=".", runner=wsl.run, which=shutil.which, kind=None, linux_
             out.append(_ok("uuu", "flash from the Windows side with uuu.exe"))
     else:
         out.append(_fail("host", "%s is not supported" % kind, "use Windows with WSL2, or Linux"))
+    return out
+
+
+def run_installer(repo_root):
+    """Check the fast path without probing USB, starting WSL or downloading files."""
+    out = [check_python(), check_disk(repo_root)]
+    for module in ('pyfatfs', 'cryptography'):
+        try:
+            __import__(module)
+            out.append(_ok(module))
+        except ImportError:
+            out.append(_fail(module, 'not installed', 'install requirements-installer.txt, or use the packaged application'))
+    from pathlib import Path
+    if (Path(repo_root)/'release/tools.json').is_file():
+        try:
+            from .flash import resolve_tool
+            out.append(_ok('native uuu', str(resolve_tool(repo_root))))
+        except (OSError,ValueError,KeyError) as exc:
+            out.append(_fail('native uuu',str(exc),'restore the original application package'))
+    else:
+        out.append(_warn('native uuu','development checkout; use flash --uuu PATH or a packaged application'))
+    out.append(_ok('preparation','no WSL, compiler, chroot or filesystem mounts required'))
     return out
 
 

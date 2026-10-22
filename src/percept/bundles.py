@@ -17,6 +17,13 @@ MAX_EXPANDED = 32 * 1024**3
 
 
 def validate_manifest(data):
+    try:
+        return _validate_manifest(data)
+    except (KeyError, TypeError, IndexError, OverflowError):
+        raise ValueError('malformed bundle manifest') from None
+
+
+def _validate_manifest(data):
     if not isinstance(data, dict): raise ValueError('invalid bundle manifest')
     if data.get('schema') != SCHEMA or data.get('kind') != 'percept-bundle':
         raise ValueError('unsupported Percept bundle format')
@@ -51,21 +58,14 @@ def validate_manifest(data):
 
 
 def read_manifest(path):
-    with tarfile.open(path, 'r:*') as archive:
-        members = archive.getmembers()
-        names = [m.name for m in members]
-        if len(names) != len(set(names)) or set(names) != REQUIRED | {'bundle.json'}:
-            raise ValueError('unexpected or duplicate bundle members')
-        if any(not m.isfile() for m in members):
-            raise ValueError('links and special files are forbidden in bundles')
-        entry = archive.getmember('bundle.json')
-        if entry.size > 2 * 1024**2:
-            raise ValueError('oversized bundle manifest')
-        data = validate_manifest(json.load(archive.extractfile(entry)))
-        for name, record in data['artifacts'].items():
-            if archive.getmember(name).size != record['bytes']:
-                raise ValueError('bundle size mismatch: ' + name)
-        return data
+    try:
+        with tarfile.open(path, 'r|*') as archive:
+            entry = next(iter(archive))
+            if entry.name != 'bundle.json' or not entry.isfile() or entry.size > 2*1024**2:
+                raise ValueError('bundle must start with a bounded regular bundle.json')
+            return validate_manifest(json.load(archive.extractfile(entry)))
+    except (tarfile.TarError, EOFError, StopIteration):
+        raise ValueError('invalid or truncated bundle archive') from None
 
 
 def unpack(path, destination):
@@ -73,30 +73,61 @@ def unpack(path, destination):
     data = read_manifest(path)
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=False)
-    with tarfile.open(path, 'r:*') as archive:
-        for name in sorted(REQUIRED):
-            target = destination/name
-            digest = hashlib.sha256()
-            remaining = data['artifacts'][name]['bytes']
-            with archive.extractfile(name) as src, target.open('xb') as dst:
-                while remaining:
-                    block = src.read(min(1024**2, remaining))
-                    if not block:
-                        raise ValueError('truncated bundle: ' + name)
-                    dst.write(block); digest.update(block); remaining -= len(block)
-            if digest.hexdigest() != data['artifacts'][name]['sha256']:
-                raise ValueError('bundle hash mismatch: ' + name)
+    _consume(path,data,destination)
     return data
+
+
+def verify_bundle(path):
+    data=read_manifest(path)
+    _consume(path,data,None)
+    return data
+
+
+def _consume(path,data,destination):
+    try:
+        with tarfile.open(path,'r|*') as archive:
+            seen=set()
+            for entry in archive:
+                name=entry.name
+                if name in seen or name not in REQUIRED | {'bundle.json'} or not entry.isfile():
+                    raise ValueError('unexpected, linked or duplicate bundle member')
+                seen.add(name)
+                if name=='bundle.json':
+                    if entry.size>2*1024**2:raise ValueError('oversized manifest')
+                    if json.load(archive.extractfile(entry)) != data:raise ValueError('manifest changed while reading')
+                    continue
+                record=data['artifacts'][name]
+                if entry.size!=record['bytes']:raise ValueError('bundle size mismatch: '+name)
+                digest=hashlib.sha256();remaining=entry.size
+                dst=(destination/name).open('xb') if destination else None
+                try:
+                    with archive.extractfile(entry) as src:
+                        while remaining:
+                            value=src.read(min(1024**2,remaining))
+                            if not value:raise ValueError('truncated bundle: '+name)
+                            if dst:dst.write(value)
+                            digest.update(value);remaining-=len(value)
+                finally:
+                    if dst:dst.close()
+                if digest.hexdigest()!=record['sha256']:raise ValueError('bundle hash mismatch: '+name)
+            if seen!=REQUIRED|{'bundle.json'}:raise ValueError('missing bundle members')
+    except (tarfile.TarError,EOFError):
+        raise ValueError('invalid or truncated bundle archive') from None
 
 
 def compatible(cfg, manifest):
     os_cfg = cfg['os']
     if os_cfg['profile'] != manifest['profile'] or os_cfg['cpu_profile'] != manifest['cpu_profile']:
         raise ValueError('select a bundle matching the OS and CPU profile')
-    if os_cfg['kernel']['source'] != 'distro' or os_cfg['kernel'].get('cmdline_extra'):
+    if os_cfg['kernel']['source'] != 'distro':
         raise ValueError('custom kernel settings require a source build')
-    if os_cfg.get('mirror') or os_cfg['packages']['extra']:
-        raise ValueError('mirror and extra package settings require a source build')
+    options=manifest.get('build_options',{})
+    if os_cfg['packages']['extra'] and os_cfg['packages']['extra'] != options.get('extra_packages',[]):
+        raise ValueError('extra packages require a matching source-built bundle')
+    for value, key in ((os_cfg.get('mirror'),'mirror_sha256'),
+                       (os_cfg['kernel'].get('cmdline_extra'),'cmdline_extra_sha256')):
+        if value and hashlib.sha256(value.encode()).hexdigest() != options.get(key):
+            raise ValueError('mirror/kernel command line requires a matching source-built bundle')
     for name, enabled in os_cfg['features'].items():
         if enabled is not None and enabled != manifest['features'].get(name, False):
             raise ValueError('bundle feature differs: ' + name + '; use a matching source build')

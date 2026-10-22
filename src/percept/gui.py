@@ -54,6 +54,20 @@ def main(repo, smoke=False):
         value=simpledialog.askstring('Percept password',question,parent=root,show='*')
         if value is None: raise InterruptedError('configuration cancelled')
         return value
+    def generate_key(path):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+        if Path(path).exists() or Path(path+'.pub').exists():
+            raise ValueError('This key file already exists. Select the existing public key instead.')
+        password=secret('Passphrase for the new PC SSH key (leave empty only if intended): ')
+        if password and password!=secret('Repeat SSH key passphrase: '):
+            raise ValueError('SSH key passphrases differ; no key was written.')
+        key=Ed25519PrivateKey.generate()
+        encryption=serialization.BestAvailableEncryption(password.encode()) if password else serialization.NoEncryption()
+        private=key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.OpenSSH,encryption)
+        public=key.public_key().public_bytes(serialization.Encoding.OpenSSH,serialization.PublicFormat.OpenSSH)
+        config.write_private(path,private.decode())
+        config.write_private(path+'.pub',public.decode()+'\n')
     def load_settings():
         if state['busy']: return None
         name=board.get().strip()
@@ -62,7 +76,9 @@ def main(repo, smoke=False):
         if (directory/'board.toml').is_file():
             cfg=config.load_board(str(directory))
         else:
-            cfg=configure.run_wizard(configure.Prompter(prompt,secret,append),defaults_name=name)
+            prompter=configure.Prompter(prompt,secret,append)
+            prompter.generate_key=generate_key
+            cfg=configure.run_wizard(prompter,defaults_name=name)
             result=validate.validate(cfg,repo)
             if not result.ok: raise ValueError('Settings need correction: '+'; '.join(result.errors))
             configure.write_board(repo,cfg)
@@ -85,6 +101,7 @@ def main(repo, smoke=False):
             if not (directory/'board.toml').is_file():
                 configure_click(); return
             editor=tk.Toplevel(root);editor.title('Edit saved settings — '+name);editor.geometry('750x550')
+            editor.transient(root);editor.grab_set()
             tabs=ttk.Notebook(editor);tabs.pack(fill='both',expand=True,padx=10,pady=10);texts={}
             for filename in ('board.toml','secrets.toml'):
                 tab=ttk.Frame(tabs);tabs.add(tab,text=filename)
@@ -147,9 +164,19 @@ def main(repo, smoke=False):
         webbrowser.open('https://github.com/MicrosoftDocs/azure-docs/blob/30ca9855dea6dbafd43ac456e9c1965633e3676d/articles/azure-percept/media/how-to-usb-update/dip-switch-03.jpg')
     ttk.Button(frame,text='Official DIP-switch photo',command=photo).pack(anchor='w',pady=(8,0))
     def toggle():
+        def inputs(widget):
+            for child in widget.winfo_children():
+                if isinstance(child,(ttk.Entry,ttk.Combobox,ttk.Radiobutton,ttk.Checkbutton)):
+                    child.configure(state='disabled' if state['busy'] else 'normal')
+                inputs(child)
+        inputs(frame)
         for button in buttons: button.configure(state='disabled' if state['busy'] else 'normal')
         buttons[-1].configure(state='normal' if not state['busy'] and state['manifest'] else 'disabled')
         cancel_button.configure(state='normal' if state['busy'] and state.get('phase')=='prepare' else 'disabled')
+    def invalidate(*args):
+        if not state['busy']:
+            state['manifest']=None;toggle()
+    for variable in (board,source,bundle,version,recovery,trust):variable.trace_add('write',invalidate)
     # Phase tracking prevents presenting flash cancellation as safe.
     original_prepare=prepare_click;original_flash=flash_click
     def prepare_phase(): state['phase']='prepare';original_prepare()

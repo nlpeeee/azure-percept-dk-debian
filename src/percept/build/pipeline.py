@@ -70,6 +70,10 @@ def grub(repo):
     return (Path(repo)/'launcher/grub.cfg.production').read_text().replace('linux /boot/vmlinuz-5.4.3-mariner','linux $efiroot/percept/stock-Image')
 def generic_config(cfg):
     from .. import validate
+    from urllib.parse import urlsplit
+    mirror=urlsplit(cfg['os'].get('mirror') or '')
+    if mirror.username or mirror.password:
+        raise ValueError('generic bundles cannot include credentials in mirror URLs')
     # Validate a minimal temporary build identity, then remove every personal field.
     base = validate.validate({'schema':1,'board':{'name':'generic'},
         'user':[{'name':'percept','password_mode':'generate'}],
@@ -94,7 +98,8 @@ def build(repo,cfg,bundle=False,recovery=None):
         cfg = generic_config(cfg)
     name=cfg['board']['name'];stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     out=repo/'out'/name/stamp;out.mkdir(parents=True,exist_ok=False);out.chmod(0o700)
-    print('Build output: '+str(out)+'; incomplete until a PERSONAL.manifest.json exists.', flush=True)
+    completion = 'the final .bundle.tar.gz' if bundle else 'a PERSONAL.manifest.json'
+    print('Build output: '+str(out)+'; incomplete until '+completion+' exists.', flush=True)
     work=out/'work';work.mkdir(mode=0o700)
     generated=[] if bundle else overlay.credentials(cfg)
     if generated:private(out/'credentials.txt',''.join(user+': '+pw+'\n' for user,pw in generated))

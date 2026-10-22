@@ -169,6 +169,14 @@ class Portable(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'no trusted release'):
             release_bundle(helpers.ROOT,'v1',{},Reporter(lambda e:None))
 
+    def test_fast_doctor_never_calls_wsl_or_downloads(self):
+        from percept import doctor
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch('percept.wsl.run',side_effect=AssertionError('must not start WSL')), \
+             patch('percept.build.pipeline.download',side_effect=AssertionError('must not download')):
+            checks=doctor.run_installer(tmp)
+            self.assertTrue(any(c.name=='preparation' and c.status=='ok' for c in checks))
+
 
 try:
     import pyfatfs
@@ -179,6 +187,27 @@ except ImportError:EXTRAS=False
 
 @unittest.skipUnless(EXTRAS,'install requirements-installer.txt for portable filesystem/signature tests')
 class WithDependencies(unittest.TestCase):
+    def test_signed_release_chain_authenticates_before_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'release').mkdir()
+            cfg=validate.validate(helpers.minimal_cfg()).config
+            key=Ed25519PrivateKey.generate()
+            public=base64.b64encode(key.public_key().public_bytes_raw()).decode()
+            (root/'release/policy.json').write_text(json.dumps({'base_url':'https://example.invalid/releases',
+                'public_keys':{'unit':public}}))
+            message=json.dumps({'schema':1,'version':'v-unit','bundles':{'unchanged':{
+                'file':'unit.bundle.tar.gz','sha256':'0'*64,'bytes':123}}}).encode()
+            signature=json.dumps({'key_id':'unit','signature':base64.b64encode(key.sign(message)).decode()}).encode()
+            with patch('percept.prepare.small_download',side_effect=[message,signature]), \
+                 patch('percept.prepare.fetch_file',return_value=root/'cached') as fetch:
+                self.assertEqual(release_bundle(root,'v-unit',cfg,Reporter(lambda e:None)),root/'cached')
+                fetch.assert_called_once()
+            with patch('percept.prepare.small_download',side_effect=[message+b' ',signature]), \
+                 patch('percept.prepare.fetch_file') as fetch:
+                with self.assertRaisesRegex(ValueError,'signature'):
+                    release_bundle(root,'v-unit',cfg,Reporter(lambda e:None))
+                fetch.assert_not_called()
+
     def test_fat_and_byte_range_reader_agree(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'esp.img';value=b'synthetic EFI contents'

@@ -38,7 +38,7 @@ def install_generic(root, cfg, root_uuid, esp_uuid, repo):
     (root/'boot/efi').mkdir(parents=True, exist_ok=True)
     write(root, 'etc/percept/bundle.json', json.dumps({'root_uuid': root_uuid, 'esp_uuid': esp_uuid}))
     destination = root/'usr/lib/percept/python/percept'
-    shutil.copytree(repo/'src/percept', destination, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    shutil.copytree(repo/'src/percept', destination, dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     assets = root/'usr/lib/percept/assets/target'
     assets.mkdir(parents=True, exist_ok=True)
     for name in ('percept-boot-ok', 'percept-wait-ssh', 'percept-firstboot-grow',
@@ -52,20 +52,7 @@ def install_generic(root, cfg, root_uuid, esp_uuid, repo):
           '[Unit]\nRequires=percept-hostkeys.service\nAfter=percept-hostkeys.service\n')
     write(root, 'usr/local/sbin/percept-provision',
           '#!/bin/sh\nexport PYTHONPATH=/usr/lib/percept/python\nexec /usr/bin/python3 -m percept.provision\n', 0o755)
-    write(root, 'etc/systemd/system/percept-provision.service', '''[Unit]
-Description=Apply local Percept installation settings
-RequiresMountsFor=/boot/efi
-After=local-fs.target
-Before=network-pre.target ssh.service getty.target
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/percept-provision
-RemainAfterExit=yes
-TimeoutStartSec=300
-UMask=0077
-[Install]
-WantedBy=multi-user.target
-''')
+    write(root, 'etc/systemd/system/percept-provision.service', (repo/'target/percept-provision.service').read_text())
     for unit in GATED:
         write(root, 'etc/systemd/system/'+unit+'.d/05-provision.conf',
               '[Unit]\nRequires=percept-provision.service\nAfter=percept-provision.service\n')

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
-from percept.bundles import read_manifest
+from percept.bundles import verify_bundle
 from percept.build.pipeline import sha
 
 p=argparse.ArgumentParser(description=__doc__)
@@ -16,7 +16,7 @@ a=p.parse_args()
 if a.output.exists():p.error('output already exists')
 data={'schema':1,'version':a.version,'bundles':{}}
 for path in a.bundles:
-    manifest=read_manifest(path)
+    manifest=verify_bundle(path)
     cpu=manifest['cpu_profile']
     if cpu in data['bundles']:p.error('duplicate CPU variant')
     data['bundles'][cpu]={'file':path.name,'bytes':path.stat().st_size,'sha256':sha(path),

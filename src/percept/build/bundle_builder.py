@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import shutil
+import hashlib
 from .. import bundles, packages, vendor_recipe
 from .pipeline import inputs
 
@@ -29,6 +30,9 @@ def finish_bundle(repo, cfg, out, work, root, root_uuid, esp_uuid, release, reso
         'esp_uuid':esp_uuid, 'rootfs_packages':inventory, 'hardware_tested':False,
         'launcher_build':json.loads((repo/'out/launcher/build.manifest.json').read_text()),
         'module_build':json.loads((repo/'out/kexecmod/modules.manifest.json').read_text()),
+        'build_options':{'extra_packages':cfg['os']['packages']['extra'],
+            'mirror_sha256':hashlib.sha256((cfg['os'].get('mirror') or '').encode()).hexdigest(),
+            'cmdline_extra_sha256':hashlib.sha256((cfg['os']['kernel'].get('cmdline_extra') or '').encode()).hexdigest()},
         'qualification':{'generic_firstboot':'pending', 'vpu_from_image':'pending',
                          'cold_boots':'pending', 'rescue':'pending', 'kernel_rollback':'pending'}}
     destination = out/(cfg['os']['cpu_profile']+'.bundle.tar.gz')

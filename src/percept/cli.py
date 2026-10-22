@@ -66,7 +66,7 @@ def cmd_setup(args, root):
     return setup.run(args, root)
 
 def cmd_doctor(args, root):
-    checks = doctor.run_all(root)
+    checks = doctor.run_installer(root) if args.mode == 'installer' else doctor.run_all(root)
     print(doctor.format_checks(checks))
     return doctor.exit_code(checks)
 
@@ -199,7 +199,9 @@ def build_parser():
 
     setup = sub.add_parser("setup", help="create or reuse settings, review them and show the installation steps")
     setup.add_argument("--board", help="saved board name, or name for a new board")
-    sub.add_parser("doctor", help="check this PC (and WSL2) and print fixes")
+    setup.add_argument('--mode', choices=['build','prepare'], default='prepare' if getattr(sys,'frozen',False) else 'build', help='which next-step instructions to show')
+    doctor_parser = sub.add_parser("doctor", help="check installer or source-build prerequisites")
+    doctor_parser.add_argument('--mode', choices=['build','installer'], default='installer' if getattr(sys,'frozen',False) else 'build')
     c = sub.add_parser("configure", help="ask for your settings and write boards/<name>/")
     c.add_argument("--name", help="exact board folder name (hostname is configured separately)")
     c.add_argument("--from", dest="from_file", metavar="FILE", help="read settings from a TOML file instead of asking")
@@ -227,10 +229,10 @@ def build_parser():
             p.add_argument("--recovery", help="verified Microsoft ZIP for bundle extraction recipe")
             p.add_argument("--target", choices=["image", "bundle"], default="image")
             p.add_argument("--resolved-stdin", action="store_true", help=argparse.SUPPRESS)
-    p=sub.add_parser("flash", help="verify a personal installer and flash one board using Windows uuu")
+    p=sub.add_parser("flash", help="verify a personal installer and flash one board using native uuu")
     p.add_argument("--board", required=True)
     p.add_argument("--manifest", required=True)
-    p.add_argument("--uuu", help="path to the Windows uuu executable")
+    p.add_argument("--uuu", help="path to the native uuu executable")
     gui_parser = sub.add_parser("gui", help="open the portable installation wizard")
     gui_parser.add_argument('--smoke-test', action='store_true', help=argparse.SUPPRESS)
     p = sub.add_parser("prepare", help="prepare a personal USB image without WSL")

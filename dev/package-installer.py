@@ -70,7 +70,15 @@ for name in ('LICENSE','NOTICE.md','LICENSES'):
 shutil.copy2(ROOT/'docs/portable-installer.md',a.output/'dist/INSTALL.md')
 inventory=subprocess.check_output([sys.executable,'-m','pip','freeze'],text=True)
 (a.output/'dist/python-dependencies.txt').write_text(inventory,encoding='utf-8')
+commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+(a.output/'dist/application-build.json').write_text(json.dumps({'schema':1,'source_commit':commit,
+    'platform':key,'python':platform.python_version(),'uuu_version':'1.5.243','uuu_sha256':sha(tool),
+    'qualification':{'native_smoke':'pending','clean_machine':'pending','hardware':'pending'}},indent=2)+'\n',encoding='utf-8')
 third=a.output/'dist/third-party';third.mkdir()
+for candidate in (Path(sys.base_prefix)/'LICENSE.txt', Path(sys.base_prefix)/'LICENSE',
+                  Path('/usr/share/doc/python3.13/copyright')):
+    if candidate.is_file():
+        target=third/'Python';target.mkdir(exist_ok=True);shutil.copy2(candidate,target/candidate.name)
 for distribution in importlib.metadata.distributions():
     for file in distribution.files or []:
         if any(word in str(file).lower() for word in ('license','copying','notice')) and not str(file).endswith('.py'):

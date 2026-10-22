@@ -1,0 +1,6 @@
+worktree:
+  # Gitignored, read-only inputs linked into each worktree from the main checkout.
+  # output/ is left per-worktree so parallel builds don't collide.
+  sharedDirectories:
+    - sources/kexec-mod
+    - sources/firmware-audit

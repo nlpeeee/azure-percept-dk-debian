@@ -1,0 +1,94 @@
+diff --git a/kernel/kexec_param.c b/kernel/kexec_param.c
+index d0d140e..3ae1ec7 100644
+--- a/kernel/kexec_param.c
++++ b/kernel/kexec_param.c
+@@ -4,6 +4,7 @@
+ 
+ #include <linux/module.h>
+ #include <linux/capability.h>
++#include <linux/delay.h>
+ #include <linux/fs.h>
+ #include <linux/mm.h>
+ #include <linux/mutex.h>
+@@ -11,6 +12,7 @@
+ #include <linux/sizes.h>
+ #include <linux/slab.h>
+ #include <linux/vmalloc.h>
++#include <linux/workqueue.h>
+ 
+ #include "kexec.h"
+ #include "kexec_internal.h"
+@@ -24,7 +26,13 @@ module_param(bundle, charp, 0);
+ MODULE_PARM_DESC(bundle, "Absolute path to a KXMBNDL1 prepared-segment bundle");
+ static bool execute;
+ module_param(execute, bool, 0);
+-MODULE_PARM_DESC(execute, "Execute after loading; default false only stages the image");
++MODULE_PARM_DESC(execute, "Arm post-init execution; default false only stages the image");
++static bool trigger;
++module_param(trigger, bool, 0600);
++MODULE_PARM_DESC(trigger, "Start the armed kexec after module initialization finishes");
++static int execution_status;
++module_param(execution_status, int, 0400);
++MODULE_PARM_DESC(execution_status, "0 waiting, 1 triggered, 2 entering kexec, negative errno on return");
+ 
+ struct bundle_header {
+ 	u8 magic[8];
+@@ -288,6 +296,39 @@ out:
+ 	return ret;
+ }
+ 
++static void execute_worker(struct work_struct *unused)
++{
++	int ret, i;
++
++	for (i = 0; i < 300 && !READ_ONCE(trigger); i++)
++		msleep(100);
++	if (!READ_ONCE(trigger)) {
++		WRITE_ONCE(execution_status, -ETIMEDOUT);
++		pr_err("Post-init execution trigger timed out.\n");
++		return;
++	}
++	/* The sysfs trigger is written only after insmod has returned, so the
++	 * module has left MODULE_STATE_COMING. Keep it pinned while executing.
++	 */
++	if (!try_module_get(THIS_MODULE)) {
++		WRITE_ONCE(execution_status, -ENODEV);
++		pr_err("Could not pin module for post-init execution.\n");
++		return;
++	}
++	WRITE_ONCE(execution_status, 1);
++	pr_emerg("Post-init execution triggered.\n");
++	/* Give the shutdown hook time to acknowledge the triggered state. */
++	msleep(1500);
++	WRITE_ONCE(execution_status, 2);
++	pr_emerg("Entering kernel_kexec from worker.\n");
++	ret = kernel_kexec();
++	WRITE_ONCE(execution_status, ret ? ret : -EIO);
++	pr_err("kernel_kexec returned %d.\n", ret);
++	module_put(THIS_MODULE);
++}
++
++static DECLARE_WORK(execute_work, execute_worker);
++
+ static int __init kexec_param_init(void)
+ {
+ 	int ret;
+@@ -304,8 +345,8 @@ static int __init kexec_param_init(void)
+ 	mutex_lock(&kexec_mutex);
+ 	ret = load_bundle();
+ 	mutex_unlock(&kexec_mutex);
+-	if (!ret && execute)
+-		ret = kernel_kexec();
++	if (!ret && execute && !schedule_work(&execute_work))
++		ret = -EBUSY;
+ 	if (ret) {
+ 		kimage_free(xchg(&kexec_image, NULL));
+ 		kexec_compat_unload();
+@@ -316,6 +357,7 @@ module_init(kexec_param_init);
+ 
+ static void __exit kexec_param_exit(void)
+ {
++	cancel_work_sync(&execute_work);
+ 	kimage_free(xchg(&kexec_image, NULL));
+ 	kexec_compat_unload();
+ }

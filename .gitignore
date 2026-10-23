@@ -34,3 +34,9 @@ Thumbs.db
 .DS_Store
 *.swp
 *~
+
+# Migration triage approved 2026-10-23
+exports/
+percept-camera-usefulness/
+percept-spl-cve-audit/
+uuu.exe

@@ -51,6 +51,16 @@ class Resolve(unittest.TestCase):
         self.assertTrue(r["cmdline"].startswith("root=UUID=UUID-X ro console=ttymxc0,115200"))
         self.assertEqual(r["problems"], [])
 
+    def test_audio_default_follows_profile(self):
+        self.assertTrue(profiles.resolve(board(), trixie())["features"]["audio"])
+        byo = profiles.load_profile(os.path.join(PROFILES, "byo-kernel"))
+        self.assertFalse(profiles.effective_features(board(), byo)[0]["audio"])
+
+    def test_audio_explicit_false_honoured(self):
+        r = profiles.resolve(board(features={"audio": False}), trixie())
+        self.assertFalse(r["features"]["audio"])
+        self.assertTrue(profiles.resolve(board(features={"audio": True}), trixie())["features"]["audio"])
+
     def test_gpu_only(self):
         r = profiles.resolve(board(features={"vpu": False}), trixie())
         self.assertEqual(r["fixups"]["launcher"], ["upper-ram", "thermal", "media-gpu"])

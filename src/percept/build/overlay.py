@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 import secrets
 import subprocess
-from .. import sha512crypt
+from .. import packages, sha512crypt
 def write(root,name,text,mode=0o644):
     p=root/name;p.parent.mkdir(parents=True,exist_ok=True)
     p.write_text(text,encoding='utf-8');p.chmod(mode)
@@ -21,7 +21,12 @@ def credentials(cfg):
         first=next((pw for user,pw in plain if user==cfg['user'][0]['name']),None)
         if first:plain.append(('rescue:'+rescue.get('username','root'),first))
     return plain
-def apply(root,cfg,root_uuid,esp_uuid,repo,firstboot=False):
+AUDIO_FILES=(('70-percept-ear.rules','etc/udev/rules.d/70-percept-ear.rules',0o644),
+    ('50-percept-ear.conf','etc/alsa/conf.d/50-percept-ear.conf',0o644),
+    ('percept-ear-status','usr/local/bin/percept-ear-status',0o755))
+def install_audio(root,repo):
+    for src,dst,mode in AUDIO_FILES:write(Path(root),dst,(Path(repo)/'target'/src).read_text(),mode)
+def apply(root,cfg,root_uuid,esp_uuid,repo,firstboot=False,audio=None):
     root,repo=Path(root),Path(repo)
     def ch(*args):subprocess.run(['chroot',str(root),*args],check=True,stdout=subprocess.DEVNULL)
     b=cfg['board'];ssh=cfg['ssh']
@@ -93,6 +98,8 @@ def apply(root,cfg,root_uuid,esp_uuid,repo,firstboot=False):
     for service in ['ssh','systemd-networkd','systemd-resolved','systemd-timesyncd','bluetooth','serial-getty@ttymxc0','percept-hostkeys','percept-boot-ok']:
         ch('systemctl','enable',service)
     ch('systemctl','mask','systemd-networkd-wait-online.service')
+    # Generic bundles bake the audio files in at build time (install_generic).
+    if not firstboot and packages.audio_enabled(cfg,None if audio is None else {'audio':audio}):install_audio(root,repo)
     if cfg['storage']['root_size']=='fill':ch('systemctl','enable','percept-firstboot-grow.service')
     resolver=root/'etc/resolv.conf'
     if resolver.exists() or resolver.is_symlink():resolver.unlink()

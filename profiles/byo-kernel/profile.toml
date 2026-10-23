@@ -43,6 +43,7 @@ gpu = { default = true }
 vpu = { default = true, requires = ["gpu"] }
 usb_c_host = { default = true }
 camera = { default = false }
+audio = { default = false }
 upper_ram = { default = true }
 thermal = { default = true }
 

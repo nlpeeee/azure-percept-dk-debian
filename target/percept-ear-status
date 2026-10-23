@@ -1,0 +1,55 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Read-only report on the Azure Percept Ear SoM (audio). Writes nothing.
+# Exit: 0 healthy, 1 not attached, 2 controller firmware too old, 3 attached but no audio card.
+set -u
+
+ctl_bcd=""; audio_n=0
+for d in /sys/bus/usb/devices/*; do
+    [ -r "$d/idVendor" ] && [ -r "$d/idProduct" ] || continue
+    [ "$(cat "$d/idVendor")" = 045e ] || continue
+    case "$(cat "$d/idProduct")" in
+        0673) ctl_bcd=$(cat "$d/bcdDevice" 2>/dev/null) ;;
+        0671) audio_n=$((audio_n + 1)) ;;
+    esac
+done
+
+if [ -z "$ctl_bcd" ]; then
+    echo "Ear SoM controller 045e:0673: NOT PRESENT (no Ear SoM attached?)"
+    exit 1
+fi
+echo "Ear SoM controller 045e:0673: present, bcdDevice $ctl_bcd"
+
+if [ "$ctl_bcd" = 0100 ]; then
+    cat <<'MSG'
+
+The controller runs the old firmware (1.00): cloud-authenticated, audio stays locked.
+Update it with Microsoft's "Azure Percept DK SoM Attestation Update Tool":
+  https://download.microsoft.com/download/7/7/a/77a2f57a-0ede-48be-988c-11796f7948da/Azure%20Percept%20DK%20SoM%20Attestation%20Update%20Tool.zip
+  zip SHA-256:    b2e10ec2a5928f3e538d8705e4174088a2a322d0dd2e5572469daee4e0e55142
+  binary SHA-256: a76b4e3ce55d0bfec1a284dc6cb89d72ab0a4f5e912008191d879ad226dfcbd0
+          (input/AP_Peripheral_Installer_v0.1, aarch64; needs libusb-1.0 and libudev)
+Unzip it, verify both hashes, then run:  sudo ./AP_Peripheral_Installer_v0.1
+WARNING: the update is IRREVERSIBLE (no downgrade). It updates every Eye/Ear SoM that is
+attached, so attach only the SoMs you want updated. See docs/audio.md.
+MSG
+    exit 2
+fi
+
+if [ "$audio_n" -ge 1 ]; then
+    echo "Ear SoM USB audio 045e:0671: present ($audio_n)"
+else
+    echo "Ear SoM USB audio 045e:0671: NOT PRESENT"
+fi
+
+if grep -q '\[PerceptEar' /proc/asound/cards 2>/dev/null; then
+    echo "ALSA card PerceptEar: present"
+    if [ -r /proc/asound/PerceptEar/stream0 ]; then
+        echo "stream0 summary:"
+        grep -E '^(Playback|Capture):|Format:|Channels:|Rates:|Endpoint:' /proc/asound/PerceptEar/stream0 | sed 's/^/  /'
+    fi
+    exit 0
+fi
+echo "ALSA card PerceptEar: NOT PRESENT"
+echo "Check that snd-usb-audio is loaded and 70-percept-ear.rules is installed (a generic card id 'USB' means the rule did not apply)."
+exit 3

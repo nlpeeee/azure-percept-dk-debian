@@ -121,7 +121,8 @@ def build(repo,cfg,bundle=False,recovery=None):
     run(['bash',repo/'launcher/build.sh'])
     root_uuid=str(uuid.uuid4());serial=secrets.token_hex(4).upper();esp_uuid=serial[:4]+'-'+serial[4:]
     settings=work/'settings.json'
-    private(settings,json.dumps({'config':cfg,'root_uuid':root_uuid,'esp_uuid':esp_uuid,'generic':bundle}))
+    features,_=profiles.effective_features(cfg,profiles.load_profile(str(repo/'profiles'/cfg['os']['profile'])))
+    private(settings,json.dumps({'config':cfg,'features':features,'root_uuid':root_uuid,'esp_uuid':esp_uuid,'generic':bundle}))
     root=work/'rootfs'
     run(['bash',repo/'build/rootfs.sh',root,settings,repo/'profiles'/cfg['os']['profile']])
     release=(root/'percept-kernel-release').read_text().strip()
@@ -149,7 +150,7 @@ def build(repo,cfg,bundle=False,recovery=None):
         from .bundle_builder import finish_bundle
         return finish_bundle(repo,cfg,out,work,root,root_uuid,esp_uuid,release,resolved,commit,run,recovery)
     from ..packages import check_inventory
-    check_inventory((root/'percept-package-versions').read_text().splitlines(), resolved['features']['vpu'])
+    check_inventory((root/'percept-package-versions').read_text().splitlines(), resolved['features']['vpu'],resolved['features'].get('audio',False))
     stage=work/'esp';(stage/'percept').mkdir(parents=True);(stage/'EFI/BOOT').mkdir(parents=True);(stage/'boot/grub2').mkdir(parents=True)
     for f in ('bootaa64.efi','grubaa64.efi'):shutil.copy2(vendor/'efi'/f,stage/'EFI/BOOT'/f)
     shutil.copy2(vendor/'Image',stage/'percept/stock-Image')

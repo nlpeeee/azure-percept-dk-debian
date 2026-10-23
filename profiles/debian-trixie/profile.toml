@@ -53,6 +53,7 @@ usb_c_host = { default = true }
 camera = { default = false }
 upper_ram = { default = true }
 thermal = { default = true }
+audio = { default = true }
 
 # Device-tree fixups: valid for mainline 6.12 bindings only. They are chosen at
 # build time from the kernel release and written to the launcher config.

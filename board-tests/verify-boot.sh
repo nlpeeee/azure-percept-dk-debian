@@ -1,14 +1,22 @@
 #!/bin/bash
 # PC-side health check of a running Percept trixie boot. Read-only on the board.
-#   verify-boot.sh [--vpu]      prints PASS/FAIL/INFO lines, exits non-zero on any FAIL
+#   verify-boot.sh [--vpu] [--audio]   prints PASS/FAIL/INFO lines, exits non-zero on any FAIL
 #
 # Needs key-based root (or sudo) SSH to the board: set PERCEPT_HOST and optionally PERCEPT_KEY. --vpu also
-# requires Hantro G1/G2 probe plus video/media nodes.
+# requires Hantro G1/G2 probe plus video/media nodes. --audio requires the updated Ear SoM
+# (controller firmware 3.00, USB audio 0671, ALSA card PerceptEar with 5 capture channels).
 set -u
 host=${PERCEPT_HOST:?set PERCEPT_HOST to the board address}
 key=${PERCEPT_KEY:-$HOME/.ssh/id_ed25519}
 kh=${PERCEPT_KNOWN_HOSTS:-$HOME/.ssh/percept_known_hosts}
-want_vpu=0; [ "${1:-}" = --vpu ] && want_vpu=1
+want_vpu=0; want_audio=0
+for arg in "$@"; do
+    case $arg in
+        --vpu) want_vpu=1 ;;
+        --audio) want_audio=1 ;;
+        *) echo "usage: $0 [--vpu] [--audio]" >&2; exit 2 ;;
+    esac
+done
 ssh_opts=(-i "$key" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=8
           -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$kh" -o LogLevel=ERROR)
 
@@ -28,6 +36,18 @@ echo "deferred=$(cat /sys/kernel/debug/devices_deferred 2>/dev/null | tr '\n' ';
 echo "dwc3=$(ls /sys/bus/platform/drivers/dwc3 2>/dev/null | grep -c '^3')"
 echo "usb_som=$(lsusb 2>/dev/null | grep -cE '045e:066f')"
 echo "usb_vpu=$(lsusb 2>/dev/null | grep -cE '03e7:(2485|f63b)')"
+ear_bcd=""; ear_n=0
+for d in /sys/bus/usb/devices/*; do
+    [ -r "$d/idVendor" ] && [ "$(cat "$d/idVendor")" = 045e ] || continue
+    case "$(cat "$d/idProduct" 2>/dev/null)" in
+        0673) ear_bcd=$(cat "$d/bcdDevice" 2>/dev/null) ;;
+        0671) ear_n=$((ear_n + 1)) ;;
+    esac
+done
+echo "ear_ctl_bcd=$ear_bcd"
+echo "ear_audio_n=$ear_n"
+echo "ear_card=$([ -d /proc/asound/PerceptEar ] && echo 1 || echo 0)"
+echo "ear_cap_ch=$(awk '/^Capture:/{c=1} c&&/Channels:/{print $2; exit}' /proc/asound/PerceptEar/stream0 2>/dev/null)"
 echo "render=$(ls /dev/dri/renderD* 2>/dev/null | tr '\n' ' ')"
 echo "etnaviv=$(dmesg | grep -c 'Initialized etnaviv')"
 echo "hantro_lines=$(dmesg | grep -ci 'hantro')"
@@ -70,6 +90,14 @@ if [ "$want_vpu" = 1 ]; then
     check "media nodes ($(get media))" "$([ -n "$(get media | tr -d ' ')" ] && echo 1)"
 else
     info "VPU: hantro_lines=$(get hantro_lines) video='$(get video)' media='$(get media)'"
+fi
+if [ "$want_audio" = 1 ]; then
+    check "Ear SoM controller 045e:0673 firmware 3.00 (bcdDevice '$(get ear_ctl_bcd)')" "$([ "$(get ear_ctl_bcd)" = 0300 ] && echo 1)"
+    check "Ear SoM USB audio 045e:0671 present ($(get ear_audio_n))" "$([ "$(get ear_audio_n)" -ge 1 ] && echo 1)"
+    check "ALSA card PerceptEar present" "$([ "$(get ear_card)" = 1 ] && echo 1)"
+    check "5 capture channels ($(get ear_cap_ch))" "$([ "$(get ear_cap_ch)" = 5 ] && echo 1)"
+else
+    info "audio: ctl_bcd='$(get ear_ctl_bcd)' usb_audio=$(get ear_audio_n) card=$(get ear_card) capture_ch='$(get ear_cap_ch)'"
 fi
 [ "$fails" = 0 ] && echo "RESULT: ALL PASS" || echo "RESULT: $fails FAIL"
 exit $((fails > 0))

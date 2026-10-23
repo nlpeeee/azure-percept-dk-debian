@@ -59,6 +59,54 @@ class Portable(unittest.TestCase):
         packages.check_inventory(['ffmpeg=1'],False)
         packages.check_inventory([p+':arm64=1' for p in packages.VPU_RUNTIME],True)
 
+    def test_audio_package_selection_and_inventory(self):
+        omitted={'os':{'features':{}}}
+        both=list(packages.VPU_RUNTIME)+list(packages.AUDIO_RUNTIME)
+        self.assertEqual(packages.feature_packages(omitted),both)
+        self.assertEqual(packages.feature_packages({'os':{'features':{'audio':False}}}),list(packages.VPU_RUNTIME))
+        self.assertEqual(packages.feature_packages({'os':{'features':{'vpu':False}}}),list(packages.AUDIO_RUNTIME))
+        off={'os':{'features':{'vpu':False,'audio':False}}}
+        self.assertEqual(packages.feature_packages(off),[])
+        # Resolved features (profile defaults) take precedence over the raw board config.
+        self.assertEqual(packages.feature_packages(omitted,{'audio':False}),list(packages.VPU_RUNTIME))
+        self.assertEqual(packages.feature_packages({'os':{'features':{'audio':False}}},{'audio':True}),both)
+        with self.assertRaisesRegex(ValueError,'audio image is missing'):
+            packages.check_inventory(['ffmpeg=1'],False,True)
+        packages.check_inventory(['ffmpeg=1'],False,False)
+        packages.check_inventory(['alsa-utils:arm64=1'],False,True)
+
+    def _manifest(self,features,pkgs):
+        return {'schema':1,'kind':'percept-bundle','personal':False,'cpu_profile':'unchanged',
+            'profile':'debian-trixie','features':features,'rootfs_packages':pkgs,
+            'artifacts':{n:{'bytes':1,'sha256':'0'*64} for n in bundles.REQUIRED},
+            'kernel_release':'6.12.113+deb13-arm64','root_uuid':str(uuid.uuid4()),
+            'esp_uuid':'1234-5678','hardware_tested':False}
+
+    def test_bundle_audio_feature_is_optional_but_checked(self):
+        base={'gpu':True,'vpu':True,'usb_c_host':False,'camera':False,'upper_ram':True,'thermal':True}
+        vpu=[p+'=1' for p in packages.VPU_RUNTIME]
+        bundles.validate_manifest(self._manifest(dict(base),vpu))
+        bundles.validate_manifest(self._manifest(dict(base,audio=False),vpu))
+        bundles.validate_manifest(self._manifest(dict(base,audio=True),vpu+['alsa-utils=1']))
+        with self.assertRaisesRegex(ValueError,'audio image is missing'):
+            bundles.validate_manifest(self._manifest(dict(base,audio=True),vpu))
+        with self.assertRaisesRegex(ValueError,'feature declarations'):
+            bundles.validate_manifest(self._manifest(dict(base,bogus=True),vpu))
+        short=dict(base);del short['thermal']
+        with self.assertRaisesRegex(ValueError,'feature declarations'):
+            bundles.validate_manifest(self._manifest(short,vpu))
+
+    def test_install_audio_writes_expected_files_and_modes(self):
+        from percept.build import overlay
+        with tempfile.TemporaryDirectory() as tmp:
+            repo=Path(tmp)/'repo';(repo/'target').mkdir(parents=True)
+            for src,_,_ in overlay.AUDIO_FILES:(repo/'target'/src).write_text('stub '+src+'\n')
+            root=Path(tmp)/'root';overlay.install_audio(root,repo)
+            for src,dst,mode in overlay.AUDIO_FILES:
+                self.assertEqual((root/dst).read_text(),'stub '+src+'\n')
+            self.assertEqual({d for _,d,_ in overlay.AUDIO_FILES},{'etc/udev/rules.d/70-percept-ear.rules',
+                'etc/alsa/conf.d/50-percept-ear.conf','usr/local/bin/percept-ear-status'})
+
     def test_generic_config_removes_personal_settings(self):
         cfg=validate.validate(helpers.minimal_cfg(network={'wifi':{'enabled':True,
             'ssid':'test-network','psk':'synthetic-passphrase','country':'GB'}})).config

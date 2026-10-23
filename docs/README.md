@@ -9,6 +9,7 @@
 | [recovery.md](recovery.md) | getting back to the factory image |
 | [troubleshooting-uart.md](troubleshooting-uart.md) | serial console and boot logs |
 | [camera.md](camera.md), [gpu-vpu.md](gpu-vpu.md) | camera runtime, GPU and video decode |
+| [audio.md](audio.md) | Ear SoM microphone array and speaker output, firmware requirement |
 | [hardware-status-lab.md](hardware-status-lab.md) | detailed hardware findings (engineering notes) |
 | [legacy/](legacy/) | the original Bookworm flow and first-board install notes |
 | [lab/](lab/) | raw engineering notebooks from bringing the board up; useful history, **not** instructions, and they may name values specific to one board |

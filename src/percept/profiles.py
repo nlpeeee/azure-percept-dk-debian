@@ -15,7 +15,7 @@ ROOTFS_TYPES = ("debootstrap", "tarball", "prebuilt")
 BUILDERS = ("qemu-user", "container", "native-board")
 KERNEL_SOURCES = ("distro", "files", "custom")
 KERNEL_FORMATS = ("Image", "Image.gz")
-FEATURES = ("gpu", "vpu", "usb_c_host", "camera", "upper_ram", "thermal")
+FEATURES = ("gpu", "vpu", "usb_c_host", "camera", "upper_ram", "thermal", "audio")
 CMDLINE_RE = re.compile(r"^[A-Za-z0-9_.,=:/+ -]*$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 

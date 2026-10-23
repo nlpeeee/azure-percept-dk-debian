@@ -30,10 +30,10 @@ apt-get install -y linux-image-arm64
 # debootstrap's simple dependency resolver cannot resolve the virtual D-Bus
 # session bus and versioned RE2 provider needed by this multimedia stack.
 # Install it with APT after the base system is configured, as on the board.
-vpu_packages=$(PYTHONPATH=/src/src python3 -m percept.packages "$BUILD_SETTINGS")
-if [ -n "$vpu_packages" ]; then
+feature_packages=$(PYTHONPATH=/src/src python3 -m percept.packages "$BUILD_SETTINGS")
+if [ -n "$feature_packages" ]; then
     # Names come from the fixed package allowlist, not arbitrary user input.
-    read -r -a runtime_packages <<< "$vpu_packages"
+    read -r -a runtime_packages <<< "$feature_packages"
     apt-get install -y --no-install-recommends "${runtime_packages[@]}"
 fi
 release=$(find /lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n')

@@ -128,6 +128,7 @@ Examples: [`examples/board.minimal.toml`](../examples/board.minimal.toml),
 | `vpu` | bool | - |  | Enable Hantro video decode. Needs gpu. |
 | `usb_c_host` | bool | - |  | USB-C port as host. |
 | `camera` | bool | - |  | Install the Vision camera runtime helpers. |
+| `audio` | bool | - |  | Install ALSA tools and the Percept Audio SoM udev/ALSA configuration. |
 | `upper_ram` | bool | - |  | Expose the fourth GiB of RAM. |
 | `thermal` | bool | - |  | Thermal sensor device-tree fix. |
 

@@ -77,6 +77,7 @@ FIELDS = [
     Field("os.features.vpu", "bool", None, False, "Enable Hantro video decode. Needs gpu."),
     Field("os.features.usb_c_host", "bool", None, False, "USB-C port as host."),
     Field("os.features.camera", "bool", None, False, "Install the Vision camera runtime helpers."),
+    Field("os.features.audio", "bool", None, False, "Install ALSA tools and the Percept Audio SoM udev/ALSA configuration."),
     Field("os.features.upper_ram", "bool", None, False, "Expose the fourth GiB of RAM."),
     Field("os.features.thermal", "bool", None, False, "Thermal sensor device-tree fix."),
     Field("os.packages.extra", "list[str]", [], False, "Extra Debian packages to install."),

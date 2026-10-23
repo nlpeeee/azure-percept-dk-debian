@@ -7,7 +7,8 @@ from pathlib import Path
 import subprocess
 import sys
 from . import validate
-from .build.overlay import apply, write
+from . import packages
+from .build.overlay import apply, install_audio, write
 
 GATED = ('ssh.service', 'systemd-networkd.service', 'systemd-resolved.service',
          'systemd-timesyncd.service', 'bluetooth.service', 'percept-hostkeys.service',
@@ -29,7 +30,7 @@ def atomic(path, value):
         finally: os.close(fd)
 
 
-def install_generic(root, cfg, root_uuid, esp_uuid, repo):
+def install_generic(root, cfg, root_uuid, esp_uuid, repo, audio=None):
     """Build-time staging; never creates personal users or network settings."""
     import shutil
     root, repo = Path(root), Path(repo)
@@ -48,6 +49,8 @@ def install_generic(root, cfg, root_uuid, esp_uuid, repo):
             write(root, 'etc/systemd/system/'+name, (repo/'target'/name).read_text())
         else:
             write(root, 'usr/local/sbin/'+name, (repo/'target'/name).read_text(), 0o755)
+    if packages.audio_enabled(cfg, None if audio is None else {'audio': audio}):
+        install_audio(root, repo)
     write(root, 'etc/systemd/system/ssh.service.d/10-hostkeys.conf',
           '[Unit]\nRequires=percept-hostkeys.service\nAfter=percept-hostkeys.service\n')
     write(root, 'usr/local/sbin/percept-provision',

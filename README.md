@@ -42,6 +42,7 @@ switches and the firmware device tree is adapted at boot. Details:
 | USB-C port (host mode only), USB 3 | USB-C device/peripheral mode |
 | Gigabit Ethernet, Wi-Fi (rtw88), Bluetooth, thermal sensor, TPM | |
 | Vision camera via Microsoft's extracted runtime ([docs/camera.md](docs/camera.md)) | Detector accuracy not validated |
+| Ear SoM audio: 4-mic capture and 3.5 mm playback after a one-time firmware update ([docs/audio.md](docs/audio.md)) | Voice processing (beamforming, wake word) not evaluated |
 
 CPU power-management sources and installer hooks are integrated; select `os.cpu_profile`
 for future builds: [docs/cpu-power-management.md](docs/cpu-power-management.md).

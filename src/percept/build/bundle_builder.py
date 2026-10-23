@@ -10,7 +10,7 @@ from .pipeline import inputs
 
 def finish_bundle(repo, cfg, out, work, root, root_uuid, esp_uuid, release, resolved, commit, run, recovery):
     inventory = (root/'percept-package-versions').read_text().splitlines()
-    packages.check_inventory(inventory, resolved['features']['vpu'])
+    packages.check_inventory(inventory, resolved['features']['vpu'], resolved['features'].get('audio', False))
     if resolved['features'].get('camera'):
         raise ValueError('camera runtime is not supported in redistributable bundles')
     folder = work/'bundle'; folder.mkdir()

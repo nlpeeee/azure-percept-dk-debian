@@ -13,6 +13,7 @@ from .packages import check_inventory
 
 SCHEMA = 1
 REQUIRED = {'rootfs.img', 'launcher.cpio.gz', 'profile.toml', 'grub.cfg', 'vendor-recipe.json'}
+FEATURES_REQUIRED = {'gpu', 'vpu', 'usb_c_host', 'camera', 'upper_ram', 'thermal'}
 MAX_EXPANDED = 32 * 1024**3
 
 
@@ -51,9 +52,9 @@ def _validate_manifest(data):
         raise ValueError('invalid ESP identity')
     if not isinstance(data.get('hardware_tested'), bool) or not isinstance(data.get('features'), dict):
         raise ValueError('invalid bundle capabilities or qualification status')
-    if set(data['features']) != {'gpu','vpu','usb_c_host','camera','upper_ram','thermal'} or any(type(v) is not bool for v in data['features'].values()):
+    if not FEATURES_REQUIRED <= set(data['features']) <= FEATURES_REQUIRED | {'audio'} or any(type(v) is not bool for v in data['features'].values()):
         raise ValueError('invalid bundle feature declarations')
-    check_inventory(data['rootfs_packages'], data['features'].get('vpu', True))
+    check_inventory(data['rootfs_packages'], data['features'].get('vpu', True), data['features'].get('audio', False))
     return data
 
 

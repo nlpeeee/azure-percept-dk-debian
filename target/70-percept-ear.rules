@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: MIT
+# /etc/udev/rules.d/70-percept-ear.rules
+# Give the Azure Percept Ear SoM USB audio device (045e:0671) a stable ALSA card id
+# instead of the generic "USB", so /etc/alsa/conf.d/50-percept-ear.conf can name it.
+SUBSYSTEM=="sound", KERNEL=="card*", ATTRS{idVendor}=="045e", ATTRS{idProduct}=="0671", ATTR{id}="PerceptEar"

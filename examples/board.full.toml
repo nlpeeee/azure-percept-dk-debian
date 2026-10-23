@@ -53,6 +53,7 @@ gpu = true
 vpu = true
 usb_c_host = true
 camera = false
+audio = true
 upper_ram = true
 thermal = true
 

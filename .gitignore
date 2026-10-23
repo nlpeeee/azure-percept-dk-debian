@@ -10,6 +10,17 @@ sources/debian-rootfs.tar.zst
 
 # Build output
 output/
+uuu.exe
+experiments/percept-led/led-large.bundle
+experiments/percept-led/__pycache__/
+
+# Local kexec source checkout, proprietary evidence and compiled experiments
+sources/kexec-mod/
+sources/firmware-audit/
+tools/__pycache__/
+experiments/percept-jump/__pycache__/
+experiments/percept-trixie/config.sh
+experiments/percept-hardware/__pycache__/
 
 # OS junk
 Thumbs.db

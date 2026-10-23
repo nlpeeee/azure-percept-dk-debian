@@ -1,79 +1,111 @@
 #!/bin/bash
 # ============================================================================
-# Azure Percept DK — Copy Source Artifacts
-# Copies all needed source files from your existing debian-flash directory
-# into the production/sources/ directory.
+# Azure Percept DK — Extract Source Artifacts
+# Pulls the signed bootloader, kernel, modules, Wi-Fi driver and Bluetooth
+# firmware out of Microsoft's recovery image into sources/.
 #
-# Run this ONCE from WSL to populate sources/
+# Run this ONCE from WSL, as root (it loop-mounts the image read-only):
 #
 # Usage:
-#   bash copy_sources.sh
+#   sudo bash copy_sources.sh [path/to/Azure-Percept-DK.raw]
+#
+# With no argument, uses sources/Azure-Percept-DK.raw or the image extracted
+# from the recovery ZIP at sources/ms-image/Azure-Percept-DK*.raw.
+# Set SOURCES_DIR to write somewhere other than sources/.
 # ============================================================================
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SRC_DIR="$SCRIPT_DIR/sources"
+SRC_DIR="${SOURCES_DIR:-$SCRIPT_DIR/sources}"
+KVER="5.4.3-26.cm1"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+[ "$(id -u)" -eq 0 ] || die "This script must be run as root (sudo)."
+for cmd in losetup xz tar; do
+    command -v "$cmd" &>/dev/null || die "'$cmd' not found."
+done
 mkdir -p "$SRC_DIR"
 
-# ── Source locations (adjust these paths if your layout differs) ──────────
-FLASH_DIR="/mnt/e/percept/debian-flash"
-ORIG_DIR="/mnt/e/percept/microsoftorig"
+# ── Find the MS image ─────────────────────────────────────────────────────
+MS_IMAGE="${1:-}"
+if [ -z "$MS_IMAGE" ]; then
+    for f in "$SRC_DIR/Azure-Percept-DK.raw" "$SRC_DIR"/ms-image/Azure-Percept-DK*.raw; do
+        [ -f "$f" ] && { MS_IMAGE="$f"; break; }
+    done
+fi
+[ -f "$MS_IMAGE" ] || die "MS recovery image not found. Extract the recovery ZIP into $SRC_DIR/ms-image/ or pass the .raw path."
+IMG_DIR="$(cd "$(dirname "$MS_IMAGE")" && pwd)"
 
 echo "================================================================="
-echo "  Copying source artifacts into production/sources/"
+echo "  Extracting source artifacts into $SRC_DIR"
+echo "  From: $MS_IMAGE"
 echo "================================================================="
 echo ""
 
-copy_file() {
-    local src="$1"
-    local dst="$2"
-    if [ -f "$src" ]; then
-        echo "  ✓ Copying $(basename "$src") ($(ls -lh "$src" | awk '{print $5}'))"
-        cp "$src" "$dst"
-    else
-        echo "  ✗ MISSING: $src"
-        return 1
+# 01_build_image.sh only looks in sources/ and sources/ms-image/
+case "$IMG_DIR" in
+    "$SRC_DIR"|"$SRC_DIR/ms-image") ;;
+    *)
+        echo "  Copying MS image to $SRC_DIR/Azure-Percept-DK.raw (8 GB)..."
+        cp "$MS_IMAGE" "$SRC_DIR/Azure-Percept-DK.raw"
+        ;;
+esac
+
+# ── HAB-signed bootloader (flash.bin in the ZIP) ──────────────────────────
+if [ ! -f "$SRC_DIR/fast-hab-fw.raw" ]; then
+    for f in "$IMG_DIR/fast-hab-fw.raw" "$IMG_DIR/flash.bin"; do
+        [ -f "$f" ] && { cp "$f" "$SRC_DIR/fast-hab-fw.raw"; break; }
+    done
+fi
+[ -f "$SRC_DIR/fast-hab-fw.raw" ] || die "fast-hab-fw.raw / flash.bin not found next to the image."
+echo "  ✓ fast-hab-fw.raw"
+
+# ── Mount rootfs-A (p3) read-only ─────────────────────────────────────────
+LOOPDEV=""; MNT=""
+cleanup() {
+    [ -z "$MNT" ] || { umount "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
+    [ -z "$LOOPDEV" ] || losetup -d "$LOOPDEV" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+LOOPDEV=$(losetup --find --show --partscan --read-only "$MS_IMAGE")
+sleep 1
+MNT=$(mktemp -d)
+mount -o ro,noload "${LOOPDEV}p3" "$MNT"
+
+# Resolve a path inside the image, following one symlink level within $MNT
+in_image() {
+    local p="$MNT$1" t
+    if [ -L "$p" ]; then
+        t=$(readlink "$p")
+        case "$t" in
+            /*) p="$MNT$t" ;;
+            *)  p="$(dirname "$p")/$t" ;;
+        esac
     fi
+    echo "$p"
 }
 
-ERRORS=0
+cp "$(in_image /boot/vmlinuz)" "$SRC_DIR/vmlinuz-mariner"
+echo "  ✓ vmlinuz-mariner"
 
-# 1. Original Microsoft image (8.0G) — the base for everything
-copy_file "$ORIG_DIR/Azure-Percept-DK.raw" "$SRC_DIR/Azure-Percept-DK.raw" || ERRORS=$((ERRORS+1))
+tar czf "$SRC_DIR/ms-modules.tar.gz" -C "$MNT/lib/modules" "$KVER"
+echo "  ✓ ms-modules.tar.gz"
 
-# 2. HAB-signed bootloader (2.6M) — needed for UUU SDP boot + eMMC boot partition
-copy_file "$FLASH_DIR/fast-hab-fw.raw" "$SRC_DIR/fast-hab-fw.raw" || ERRORS=$((ERRORS+1))
+xz -dc "$MNT/lib/modules/$KVER/kernel/drivers/net/wireless/88x2ce.ko.xz" > "$SRC_DIR/88x2ce.ko"
+echo "  ✓ 88x2ce.ko"
 
-# 3. Microsoft-signed Mariner kernel (35M) — the ONLY kernel that boots on this board
-copy_file "$FLASH_DIR/vmlinuz-mariner" "$SRC_DIR/vmlinuz-mariner" || ERRORS=$((ERRORS+1))
-
-# 4. Original MS kernel modules tarball (8.2M, 647 modules including 88x2ce)
-copy_file "$FLASH_DIR/ms-modules.tar.gz" "$SRC_DIR/ms-modules.tar.gz" || ERRORS=$((ERRORS+1))
-
-# 5. Decompressed 88x2ce Wi-Fi driver (6.0M) — extracted from ms-modules for explicit install
-copy_file "$FLASH_DIR/wifi-modules/88x2ce.ko" "$SRC_DIR/88x2ce.ko" || ERRORS=$((ERRORS+1))
-
-# 6. Bluetooth firmware from original MS image (52K + 6 bytes)
-copy_file "$FLASH_DIR/rtl8822cu_fw" "$SRC_DIR/rtl8822cu_fw" || ERRORS=$((ERRORS+1))
-copy_file "$FLASH_DIR/rtl8822cu_config" "$SRC_DIR/rtl8822cu_config" || ERRORS=$((ERRORS+1))
-
-# 7. Debian rootfs tarball (97M) — if already built
-if [ -f "$FLASH_DIR/debian-rootfs.tar.zst" ]; then
-    copy_file "$FLASH_DIR/debian-rootfs.tar.zst" "$SRC_DIR/debian-rootfs.tar.zst"
-    echo "  (rootfs tarball found — you can skip 00_build_rootfs.sh)"
-else
-    echo "  ⚠ debian-rootfs.tar.zst not found — run 00_build_rootfs.sh to build it"
-fi
+cp "$(in_image /lib/firmware/rtl_bt/rtl8822cu_fw.bin)" "$SRC_DIR/rtl8822cu_fw"
+cp "$(in_image /lib/firmware/rtl_bt/rtl8822cu_config.bin)" "$SRC_DIR/rtl8822cu_config"
+echo "  ✓ rtl8822cu_fw, rtl8822cu_config"
 
 echo ""
-if [ "$ERRORS" -gt 0 ]; then
-    echo "WARNING: $ERRORS file(s) missing! Check paths above."
-    exit 1
-else
-    echo "All source files copied successfully."
-    echo ""
-    echo "Contents of sources/:"
-    ls -lh "$SRC_DIR/"
-fi
+echo "All source files extracted:"
+ls -lh "$SRC_DIR/"
 echo ""
-echo "Next step: sudo bash 01_build_image.sh"
+if [ -f "$SRC_DIR/debian-rootfs.tar.zst" ]; then
+    echo "Next step: sudo bash 01_build_image.sh"
+else
+    echo "Next step: sudo bash 00_build_rootfs.sh"
+fi

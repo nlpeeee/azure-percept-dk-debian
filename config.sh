@@ -5,10 +5,11 @@
 # ============================================================================
 
 # ── Credentials ────────────────────────────────────────────────────────────
-# CHANGE THESE for security! These are burned into the rootfs at build time.
-ROOT_PASSWORD="percept"
+# Leave the passwords empty: 00_build_rootfs.sh asks for them during the build,
+# so they never sit in this file. Add SSH keys on the device after first boot.
+ROOT_PASSWORD=""
 NEW_USER="percept"
-NEW_USER_PASSWORD="percept"
+NEW_USER_PASSWORD=""
 
 # ── Network ────────────────────────────────────────────────────────────────
 HOSTNAME="percept-dk"
@@ -27,11 +28,6 @@ STATIC_DNS="8.8.8.8 8.8.4.4"
 WIFI_SSID=""
 WIFI_PSK=""
 WIFI_COUNTRY="US"
-
-# ── SSH (optional) ─────────────────────────────────────────────────────────
-# Paste your SSH public key for passwordless login. Leave empty to skip.
-# Example: SSH_PUBKEY="ssh-ed25519 AAAA... you@yourpc"
-SSH_PUBKEY=""
 
 # ── Debian ─────────────────────────────────────────────────────────────────
 DEBIAN_SUITE="bookworm"

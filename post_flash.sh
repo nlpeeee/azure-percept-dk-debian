@@ -3,7 +3,7 @@
 # Azure Percept DK — Post-Flash Setup
 # Run on the device after first boot via SSH:
 #
-#   ssh root@192.168.1.100  (or DHCP address)
+#   ssh root@<dhcp-address>
 #   bash /root/post_flash.sh
 #
 # This script:
@@ -39,8 +39,8 @@ CURRENT_SIZE=$(lsblk -b -n -o SIZE "$ROOT_PART" 2>/dev/null)
 DISK_SIZE=$(lsblk -b -n -o SIZE "$DISK" 2>/dev/null | head -1)
 
 if [ -n "$CURRENT_SIZE" ] && [ -n "$DISK_SIZE" ]; then
-    CURRENT_GB=$(echo "scale=1; $CURRENT_SIZE / 1073741824" | bc 2>/dev/null || echo "?")
-    DISK_GB=$(echo "scale=1; $DISK_SIZE / 1073741824" | bc 2>/dev/null || echo "?")
+    CURRENT_GB=$(awk -v b="$CURRENT_SIZE" 'BEGIN { printf "%.1f", b / 1073741824 }')
+    DISK_GB=$(awk -v b="$DISK_SIZE" 'BEGIN { printf "%.1f", b / 1073741824 }')
     info "Current rootfs: ${CURRENT_GB}G on ${DISK_GB}G disk"
 fi
 
@@ -65,7 +65,6 @@ if [ "$P4_EXISTS" -gt 0 ] || [ "$P5_EXISTS" -gt 0 ]; then
     sleep 1
 else
     # p4/p5 already gone — just try expanding p3
-    CURRENT_END=$(sfdisk -d "$DISK" 2>/dev/null | grep "p3" | grep -oP 'size=\s*\K[0-9]+')
     info "Partitions p4/p5 already removed. Checking if p3 can grow..."
     echo ", +" | sfdisk -N "$ROOT_PARTNUM" "$DISK" --force 2>/dev/null || true
     partprobe "$DISK" 2>/dev/null || true
@@ -198,7 +197,7 @@ echo "  Post-flash setup complete!"
 echo "=========================================================="
 echo ""
 echo "  Next steps:"
-echo "    1. Change passwords:  passwd root && passwd percept"
+echo "    1. Add your SSH key from your PC:  ssh-copy-id percept@<this-device>"
 echo "    2. Set up Wi-Fi (if not already configured)"
 echo "    3. Disable root SSH login when ready:"
 echo "       sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config"

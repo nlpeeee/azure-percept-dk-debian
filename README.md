@@ -100,7 +100,7 @@ sudo apt install debootstrap qemu-user-static zstd
 
 ```bash
 cd production/
-nano config.sh    # Set passwords, hostname, Wi-Fi SSID, SSH public key
+nano config.sh    # Set hostname and Wi-Fi SSID (passwords are asked for during the build)
 ```
 
 ### 2. Extract source files
@@ -114,12 +114,16 @@ Place these in `production/sources/`:
 | `vmlinuz-mariner` | Extract from partition 3 of the `.raw` at `/boot/vmlinuz` | 35 MB |
 | `ms-modules.tar.gz` | Tar up `/lib/modules/5.4.3-26.cm1/` from partition 3 | 8.2 MB |
 | `88x2ce.ko` | Decompress `88x2ce.ko.xz` from `ms-modules` | 6.0 MB |
-| `rtl8822cu_fw` | From `/lib/firmware/rtl_bt/` on partition 3 | 52 KB |
-| `rtl8822cu_config` | From `/lib/firmware/rtl_bt/` on partition 3 | 6 B |
+| `rtl8822cu_fw` | `/lib/firmware/rtl_bt/rtl8822cu_fw.bin` on partition 3 | 52 KB |
+| `rtl8822cu_config` | `/lib/firmware/rtl_bt/rtl8822cu_config.bin` on partition 3 | 6 B |
 
-Or use the helper script `copy_sources.sh` (edit the paths inside first).
+Or extract the recovery ZIP into `sources/ms-image/` and let the helper script do it:
 
-To extract files from the raw image:
+```bash
+sudo bash copy_sources.sh        # or: sudo bash copy_sources.sh path/to/Azure-Percept-DK.raw
+```
+
+To extract files from the raw image by hand:
 ```bash
 # Mount partition 3 (rootfs) of the MS image
 LOOPDEV=$(sudo losetup --find --show --partscan Azure-Percept-DK.raw)
@@ -131,8 +135,8 @@ cp /mnt/percept/boot/vmlinuz sources/vmlinuz-mariner
 tar czf sources/ms-modules.tar.gz -C /mnt/percept/lib/modules 5.4.3-26.cm1
 xz -d -k /mnt/percept/lib/modules/5.4.3-26.cm1/kernel/drivers/net/wireless/88x2ce.ko.xz
 cp /mnt/percept/lib/modules/5.4.3-26.cm1/kernel/drivers/net/wireless/88x2ce.ko sources/
-cp /mnt/percept/lib/firmware/rtl_bt/rtl8822cu_fw sources/
-cp /mnt/percept/lib/firmware/rtl_bt/rtl8822cu_config sources/
+cp /mnt/percept/lib/firmware/rtl_bt/rtl8822cu_fw.bin sources/rtl8822cu_fw
+cp /mnt/percept/lib/firmware/rtl_bt/rtl8822cu_config.bin sources/rtl8822cu_config
 
 sudo umount /mnt/percept
 sudo losetup -d $LOOPDEV
@@ -141,7 +145,8 @@ sudo losetup -d $LOOPDEV
 ### 3. Build Debian rootfs
 
 ```bash
-sudo bash 00_build_rootfs.sh     # ~5 minutes, outputs sources/debian-rootfs.tar.zst
+sudo bash 00_build_rootfs.sh     # asks for the root and percept passwords, then ~5 minutes;
+                                 # outputs sources/debian-rootfs.tar.zst
 ```
 
 ### 4. Build flash image
@@ -152,14 +157,8 @@ sudo bash 01_build_image.sh      # ~2 minutes, outputs output/debian-percept-dk.
 
 ### 5. Flash the device
 
-Put the Percept DK in **USB recovery mode**:
-
-1. Unplug power
-2. Hold the small **recovery button** (near the USB ports)
-3. Plug in power while holding the button
-4. Release after 3 seconds
-
-Then flash:
+Connect the host to the board's USB recovery/data port with a data-capable cable.
+Start UUU on the host and wait for its USB-device message:
 
 ```powershell
 # Windows PowerShell:
@@ -172,6 +171,28 @@ cd /mnt/e/percept/production
 uuu flash.uuu
 ```
 
+While UUU waits, request **USB recovery mode** through SSH on the running board:
+
+```bash
+sudo flagutil -wBfRequestUsbFlash -v1
+sync
+sudo systemctl reboot
+```
+
+Microsoft documents the vendor flag followed by a reboot in this
+[Percept recovery answer](https://learn.microsoft.com/en-us/answers/questions/365138/reseting-the-percept-to-initial-state).
+Use an orderly reboot so services and filesystems shut down. If `flagutil` is
+missing on Debian, the original recovery utility was verified in this workspace
+at `/root/percept-kexec-work/flagutil`; use that full path instead. It was
+extracted from the original Microsoft image, not installed as a Debian package.
+The flag requests recoverable USB boot; it does not program fuses.
+
+If SSH is unavailable, use the official procedure for the board's **internal DIP
+switches**, following its exact board revision documentation. No switch positions
+are established here. The earlier claim of an external recovery button was
+unverified and has been removed. Setting the flag and rebooting still requires
+confirmation that the host actually enumerates the recovery USB interface.
+
 Takes about 5 minutes. Wait for "Done".
 
 ### 6. First boot
@@ -182,7 +203,7 @@ Takes about 5 minutes. Wait for "Done".
 
 ```bash
 ssh root@<dhcp-address>        # Check your router for the new device
-# Password: percept (or whatever you set in config.sh)
+# Password: the one you chose during 00_build_rootfs.sh
 ```
 
 ### 7. Post-flash setup
@@ -202,13 +223,13 @@ Repeat steps 5–7. The image in `output/debian-percept-dk.raw` is reusable.
 
 ```
 production/
-├── config.sh                    # ← Edit this: passwords, network, Wi-Fi
+├── config.sh                    # ← Edit this: hostname, network, Wi-Fi
 ├── 00_build_rootfs.sh           # Build Debian arm64 rootfs tarball
 ├── 01_build_image.sh            # Patch MS image with Debian rootfs
 ├── flash.uuu                    # UUU flash script
 ├── flash.bat                    # Windows double-click flash helper
 ├── post_flash.sh                # On-device first-boot setup
-├── copy_sources.sh              # Helper to populate sources/
+├── copy_sources.sh              # Extracts sources/ files from the MS image
 ├── README.md                    # This file
 ├── sources/                     # Source artifacts (not in git — see above)
 │   ├── Azure-Percept-DK.raw
@@ -293,13 +314,18 @@ systemctl restart docker
 ### Kernel Modules Must Be Original
 
 The kernel uses `RANDSTRUCT_PLUGIN`, which randomizes struct layouts at compile
-time using a secret seed. Only modules compiled with the **exact same seed** will
-load. The 647 modules from the original MS image work; any cross-compiled replacements
-will fail with vermagic or struct layout mismatches.
+time using a build seed. Ordinary external module builds require matching layouts
+and a seed hash in vermagic. The 647 modules from the original MS image work;
+arbitrary replacements can fail loading or corrupt memory.
 
 `MODULE_SIG_FORCE` is **not** set, so unsigned modules do load (with kernel taint).
-The issue is purely struct compatibility — you need Microsoft's build environment
-to compile new modules, which isn't publicly available.
+Matching vermagic alone does not establish struct compatibility. A narrow
+experiment on **2026-10-20** successfully loaded a custom hello module and patched
+`kexec-mod` modules without the seed, using descriptor positions recovered from
+the stock binaries. The patched modules staged the stock kernel and unloaded;
+one controlled execution attempt returned through the normal boot path without
+the test marker, so a successful kernel jump remains **unconfirmed**. See
+[`docs/kexec-mod-experiment.md`](docs/kexec-mod-experiment.md) for evidence and limits.
 
 ### The Eye SoM Camera Is a Dead End
 
@@ -324,7 +350,7 @@ USB-UART adapter or a voltage level shifter.
 | p2 | EFI-B | 11 MB | 11 MB (unchanged) | *(unused backup)* |
 | p3 | rootfs-A | 2 GB | **14.5 GB** (expanded) | `/` |
 | p4 | rootfs-B | 2 GB | *(deleted)* | — |
-| p5 | data | ~10 GB | *(deleted)* | — |
+| p5 | data | ~4 GB | *(deleted)* | — |
 
 `post_flash.sh` deletes p4 and p5, then grows p3 to fill all available space.
 
@@ -376,9 +402,24 @@ with no integrity check. By changing the `root=` parameter and the rootfs conten
 we get a fully custom Debian userspace while the entire cryptographic boot chain
 remains intact and happy.
 
+### Public Exploit + Signed Update Tracking
+
+This project now keeps a lightweight, date-stamped status of new public boot-chain
+exploit research and official signed update checks:
+
+- [`docs/boot-chain-status.md`](docs/boot-chain-status.md) — current verdict + findings matrix
+- [`docs/boot-chain-watchlist.md`](docs/boot-chain-watchlist.md) — monthly re-check runbook
+
+As of **2026-04-24**, there is still no confirmed practical public trust-chain break
+path for Percept DK and no public official signed update path that enables kernel/
+bootloader replacement or full 4 GB RAM use.
+
 ## Security Considerations
 
-- **Change the default passwords immediately** — both `root` and `percept` default to `percept`
+- There are no default passwords: `00_build_rootfs.sh` asks for them, and every board flashed from
+  the image shares them. Change them per board with `passwd` if that matters to you
+- SSH host keys and `/etc/machine-id` are generated on each board's first boot, so boards never
+  share host keys or DHCP client IDs
 - Root SSH is enabled for initial headless setup — disable after adding your SSH key:
   ```bash
   sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
@@ -389,6 +430,11 @@ remains intact and happy.
 - `CONFIG_BPF_SYSCALL` is disabled — this actually reduces the kernel's BPF attack surface (unintentionally)
 
 ## Benchmarks
+
+The table below is the historical Bookworm baseline. After the Debian 13 kernel
+and CPU power changes, the board measured **2,852.86 CPU events/sec** and
+**5,391.95 MiB/sec in the four-thread memory test** at 1.5 GHz, after reboot.
+See [the paired 1.3/1.5 GHz results and exact settings](docs/cpu-benchmarks.md).
 
 Measured on the device running Debian Bookworm with Docker and several containers:
 
@@ -421,7 +467,7 @@ This makes a decent low-power always-on homelab appliance:
 ## Troubleshooting
 
 ### UUU doesn't detect the device
-- Verify the board is in USB recovery mode (you need to set the DIP switches to recovery mode.)
+- Verify recovery USB enumeration after the vendor `BfRequestUsbFlash` request and reboot. If SSH is unavailable, follow the official internal DIP-switch recovery procedure for the board revision; do not guess switch positions.
 - Try a different USB-C cable
 - On Windows, you may need the NXP USB driver (usually auto-installs)
 

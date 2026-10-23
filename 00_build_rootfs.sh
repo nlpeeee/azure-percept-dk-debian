@@ -36,16 +36,39 @@ fi
 
 mkdir -p "$SCRIPT_DIR/sources"
 
+# ── Passwords (asked for here unless set in config.sh) ─────────────────────
+prompt_password() {
+    local label="$1" var="$2" p1 p2
+    [ -n "${!var:-}" ] && return
+    [ -t 0 ] || die "${var} is empty and there is no terminal to ask on. Set it in config.sh."
+    while true; do
+        read -rsp "  Password for ${label}: " p1; echo
+        read -rsp "  Confirm password for ${label}: " p2; echo
+        if [ -z "$p1" ]; then
+            echo "  Password cannot be empty."
+        elif [ "$p1" != "$p2" ]; then
+            echo "  Passwords do not match."
+        else
+            printf -v "$var" '%s' "$p1"
+            return
+        fi
+    done
+}
+
+echo ""
+info "Choose the login passwords for this image:"
+prompt_password "root" ROOT_PASSWORD
+prompt_password "${NEW_USER}" NEW_USER_PASSWORD
+
 echo ""
 echo "=========================================================="
 echo "  Debian ${DEBIAN_SUITE} arm64 Rootfs Builder"
 echo "  Target: Azure Percept DK (NXP i.MX8MQ)"
 echo "=========================================================="
 echo "  Output     : ${OUTPUT_TARBALL}"
-echo "  Root pass  : ${ROOT_PASSWORD}"
-echo "  User       : ${NEW_USER} / ${NEW_USER_PASSWORD}"
+echo "  Users      : root, ${NEW_USER} (passwords set)"
 echo "  Static IP  : ${STATIC_IP} (example only, DHCP default)"
-  echo "  Wi-Fi SSID : ${WIFI_SSID:-<not configured>}"
+echo "  Wi-Fi SSID : ${WIFI_SSID:-<not configured>}"
 echo "=========================================================="
 echo ""
 
@@ -56,14 +79,14 @@ cleanup() {
 trap cleanup EXIT
 
 # ── 1. Debootstrap ────────────────────────────────────────────────────────
-info "[1/8] Running debootstrap (this takes a few minutes)..."
+info "[1/10] Running debootstrap (this takes a few minutes)..."
 qemu-debootstrap --arch=arm64 \
     --include=systemd,dbus \
     "${DEBIAN_SUITE}" "${ROOTFS_DIR}" "${DEBIAN_MIRROR}"
 ok "Debootstrap complete."
 
 # ── 2. Hostname ───────────────────────────────────────────────────────────
-info "[2/8] Setting hostname to '${HOSTNAME}'..."
+info "[2/10] Setting hostname to '${HOSTNAME}'..."
 echo "${HOSTNAME}" > "${ROOTFS_DIR}/etc/hostname"
 cat > "${ROOTFS_DIR}/etc/hosts" <<EOF
 127.0.0.1       localhost
@@ -154,9 +177,9 @@ echo "nameserver 8.8.8.8" > "${ROOTFS_DIR}/etc/resolv.conf"
 
 # Full APT sources with security updates
 cat > "${ROOTFS_DIR}/etc/apt/sources.list" <<EOF
-deb http://deb.debian.org/debian bookworm main contrib non-free-firmware
-deb http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware
-deb http://security.debian.org/debian-security bookworm-security main contrib non-free-firmware
+deb ${DEBIAN_MIRROR} ${DEBIAN_SUITE} main contrib non-free-firmware
+deb ${DEBIAN_MIRROR} ${DEBIAN_SUITE}-updates main contrib non-free-firmware
+deb http://security.debian.org/debian-security ${DEBIAN_SUITE}-security main contrib non-free-firmware
 EOF
 
 chroot "${ROOTFS_DIR}" /bin/bash -c "
@@ -213,19 +236,22 @@ info "[5/10] Configuring SSH for headless access..."
 sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/'                "${ROOTFS_DIR}/etc/ssh/sshd_config"
 sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/'  "${ROOTFS_DIR}/etc/ssh/sshd_config"
 
-# Pre-generate host keys
-chroot "${ROOTFS_DIR}" /bin/bash -c "ssh-keygen -A"
+# Host keys are generated on each device's first boot, so boards flashed from
+# the same image never share keys. The image's own keys are removed at pack time.
+cat > "${ROOTFS_DIR}/etc/systemd/system/ssh-hostkeys.service" <<'EOF'
+[Unit]
+Description=Generate unique SSH host keys on first boot
+Before=ssh.service
+ConditionPathExists=!/etc/ssh/ssh_host_ed25519_key
 
-# Inject SSH public key if provided
-if [ -n "${SSH_PUBKEY}" ]; then
-    info "  Injecting SSH public key..."
-    for home_dir in "${ROOTFS_DIR}/root" "${ROOTFS_DIR}/home/${NEW_USER}"; do
-        mkdir -p "${home_dir}/.ssh"
-        echo "${SSH_PUBKEY}" > "${home_dir}/.ssh/authorized_keys"
-        chmod 700 "${home_dir}/.ssh"
-        chmod 600 "${home_dir}/.ssh/authorized_keys"
-    done
-fi
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ssh-keygen -A
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chroot "${ROOTFS_DIR}" systemctl enable ssh-hostkeys.service
 
 ok "SSH configured."
 
@@ -269,13 +295,6 @@ echo "${NEW_USER}:${NEW_USER_PASSWORD}" | chroot "${ROOTFS_DIR}" chpasswd
 echo "%sudo ALL=(ALL:ALL) ALL" > "${ROOTFS_DIR}/etc/sudoers.d/sudo-group"
 chmod 440 "${ROOTFS_DIR}/etc/sudoers.d/sudo-group"
 
-# Fix SSH key ownership if injected
-if [ -n "${SSH_PUBKEY}" ] && [ -d "${ROOTFS_DIR}/home/${NEW_USER}/.ssh" ]; then
-    USER_UID=$(chroot "${ROOTFS_DIR}" id -u "${NEW_USER}")
-    USER_GID=$(chroot "${ROOTFS_DIR}" id -g "${NEW_USER}")
-    chown -R "${USER_UID}:${USER_GID}" "${ROOTFS_DIR}/home/${NEW_USER}/.ssh"
-fi
-
 ok "Users created: root, ${NEW_USER} (sudo)."
 
 # ── 7. Serial console ────────────────────────────────────────────────────
@@ -288,8 +307,11 @@ chroot "${ROOTFS_DIR}" /bin/bash -c "
     systemctl enable systemd-resolved 2>/dev/null || true
     systemctl enable ssh 2>/dev/null || true
     systemctl enable serial-getty@ttymxc0.service 2>/dev/null || true
-    systemctl enable wpa_supplicant@wlan0 2>/dev/null || true
 "
+# Only start Wi-Fi when a config exists; otherwise the unit fails every boot
+if [ -n "${WIFI_SSID}" ]; then
+    chroot "${ROOTFS_DIR}" systemctl enable wpa_supplicant@wlan0 2>/dev/null || true
+fi
 
 # securetty
 if [ -f "${ROOTFS_DIR}/etc/securetty" ]; then
@@ -312,9 +334,6 @@ cat > "${ROOTFS_DIR}/etc/motd" <<'MOTD'
 
   ╔════════════════════════════════════════════════════════════╗
   ║  Azure Percept DK — Debian Bookworm (arm64)               ║
-  ║                                                            ║
-  ║  IMPORTANT: Change default passwords!                      ║
-  ║    passwd root && passwd percept                           ║
   ╚════════════════════════════════════════════════════════════╝
 
 MOTD
@@ -344,6 +363,14 @@ chroot "${ROOTFS_DIR}" /bin/bash -c "
 
 # Restore resolv.conf to resolved symlink
 ln -sf /run/systemd/resolve/stub-resolv.conf "${ROOTFS_DIR}/etc/resolv.conf"
+
+# Per-device identity: every board generates its own on first boot.
+# A shared machine-id would give every board the same DHCP client ID.
+rm -f "${ROOTFS_DIR}"/etc/ssh/ssh_host_*
+: > "${ROOTFS_DIR}/etc/machine-id"
+if [ -d "${ROOTFS_DIR}/var/lib/dbus" ]; then
+    ln -sf /etc/machine-id "${ROOTFS_DIR}/var/lib/dbus/machine-id"
+fi
 
 info "Creating tarball: ${OUTPUT_TARBALL} ..."
 tar -C "${ROOTFS_DIR}" --zstd -cf "${OUTPUT_TARBALL}" .

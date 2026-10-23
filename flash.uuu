@@ -7,7 +7,8 @@ uuu_version 1.2.39
 #
 # Prerequisites:
 #   1. Run 01_build_image.sh first to produce output/debian-percept-dk.raw
-#   2. Device in USB recovery mode (hold recovery button, power on)
+#   2. USB recovery via vendor flagutil + orderly reboot; see README.
+#      Without SSH, follow the board's documented internal DIP-switch procedure.
 #
 # Usage (from Windows):
 #   uuu.exe flash.uuu

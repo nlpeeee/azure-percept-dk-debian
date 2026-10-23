@@ -197,7 +197,7 @@ def run_wizard(pr, home=None, defaults_name=None):
         r["password_auth"] = True
         r["password_hash"] = sha512crypt.crypt(value)
     cfg["rescue"] = r
-    cfg["os"] = {"cpu_profile": pr.choose("CPU profile: unchanged, rated 800/1300 MHz, experimental oc1500", ["unchanged", "rated", "oc1500"], "unchanged")}
+    cfg["os"] = {"cpu_profile": pr.choose("CPU profile: experimental oc1500 (default), rated 800/1300 MHz, unchanged", ["oc1500", "rated", "unchanged"], "oc1500")}
 
     # --- install ---------------------------------------------------------
     method = pr.choose("How will you install: uuu = flash over USB, ssh = conversion (not implemented yet)",

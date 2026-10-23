@@ -35,8 +35,8 @@ and confirm it appears with `ssh-add -l`. Do not remove the passphrase to work
 around an unattended check. Password login remains an independent option.
 
 Choose Ethernet DHCP/static, optional Wi-Fi, recovery addressing and CPU policy.
-`unchanged` is the compatibility default; `rated` selects 800/1300 MHz;
-`oc1500` is explicitly experimental. SSH conversion is not yet implemented;
+The default is the experimental `oc1500` (800/1300/1500 MHz); `rated` selects
+800/1300 MHz and `unchanged` leaves CPU frequency control off. SSH conversion is not yet implemented;
 use USB (`install.method = "uuu"`).
 
 ## Synchronize, download and build

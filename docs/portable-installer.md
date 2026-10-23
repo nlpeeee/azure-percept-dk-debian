@@ -14,8 +14,9 @@ macOS remains unqualified.
 
 1. Select a release version, or select a local `.bundle.tar.gz` and
    explicitly confirm that you trust its source. Check its kernel, VPU capability,
-   CPU variant and qualification status. Use `unchanged` unless you intend to
-   select `rated` or explicitly experimental `oc1500`.
+   CPU variant and qualification status. Releases ship the experimental `oc1500`
+   variant, which is also the default CPU profile; choose `rated` or `unchanged`
+   only with a matching bundle.
 2. Create or reuse a saved board configuration. The wizard supports main and
    recovery usernames/passwords, optional public keys, Ethernet and Wi-Fi.
    Review the summary before preparation. The settings editor can update saved

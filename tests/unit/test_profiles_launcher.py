@@ -61,7 +61,7 @@ class Resolve(unittest.TestCase):
         self.assertEqual(r["fixups"], {"launcher": [], "esp-dtb": []})
 
     def test_cmdline_extra_appended_last(self):
-        r = profiles.resolve(board(kernel={"cmdline_extra": "loglevel=3"}), trixie())
+        r = profiles.resolve(board(kernel={"cmdline_extra": "loglevel=3"}, cpu_profile="unchanged"), trixie())
         self.assertTrue(r["cmdline"].endswith("cma=256M loglevel=3"))
 
     def test_fixups_are_kernel_specific(self):
@@ -85,8 +85,9 @@ class LauncherConf(unittest.TestCase):
         """The generator must reproduce the hand-written conf that boots board 1."""
         with open(os.path.join(helpers.ROOT, "launcher", "launcher.conf.trixie"), encoding="utf-8") as f:
             shipped = launcher_conf.parse(f.read().replace("<ROOT-FS-UUID>", profiles.PLACEHOLDER_UUID))
-        r = profiles.resolve(board(), trixie())
-        generated = launcher_conf.parse(launcher_conf.render(r, board()))
+        cfg = board(cpu_profile="unchanged")  # the shipped conf predates CPU power
+        r = profiles.resolve(cfg, trixie())
+        generated = launcher_conf.parse(launcher_conf.render(r, cfg))
         self.assertEqual(generated, shipped)
 
     def test_v2_has_new_keys_and_parses(self):

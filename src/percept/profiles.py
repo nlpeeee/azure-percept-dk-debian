@@ -211,7 +211,7 @@ def resolve(cfg, profile, rootfs_uuid=PLACEHOLDER_UUID):
     if cpu_profile != "unchanged":
         supported = profile.get("cpu_power", {}).get("kernels", [])
         if not any(fnmatch.fnmatch(release, pattern) for pattern in supported):
-            problems.append("CPU power profile requires a kernel matched by cpu_power.kernels")
+            problems.append("CPU power profile requires a kernel matched by cpu_power.kernels; set os.cpu_profile = \"unchanged\" for this OS profile")
         if not feats.get("thermal"):
             problems.append("CPU power profile requires the thermal feature")
         # Preserve unrelated blacklists. The PMIC provider and CPUfreq must probe.

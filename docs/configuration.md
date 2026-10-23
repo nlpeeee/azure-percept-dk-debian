@@ -105,7 +105,7 @@ Examples: [`examples/board.minimal.toml`](../examples/board.minimal.toml),
 | Setting | Type | Default | Secret | Meaning |
 |---|---|---|---|---|
 | `profile` | str | `debian-trixie` |  | Profile directory name under `profiles/`. |
-| `cpu_profile` | str | `unchanged` |  | `unchanged`, `rated` (800/1300 MHz) or experimental `oc1500` (800/1300/1500 MHz). Requires the profile CPU-power contract. |
+| `cpu_profile` | str | `oc1500` |  | Experimental `oc1500` (800/1300/1500 MHz, the default), `rated` (800/1300 MHz) or `unchanged`. `rated` and `oc1500` require the profile CPU-power contract. |
 | `mirror` | str | (none) |  | Debian mirror URL override. |
 
 ## `[os.kernel]`

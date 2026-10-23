@@ -38,7 +38,7 @@ def fixture(root):
     (folder/'profile.toml').write_bytes((Path(helpers.ROOT)/'profiles/debian-trixie/profile.toml').read_bytes())
     (folder/'grub.cfg').write_text('linux $efiroot/percept/stock-Image\nfdt pe100-usbc.dtb\n')
     (folder/'vendor-recipe.json').write_text(json.dumps(recipe))
-    manifest={'schema':1,'kind':'percept-bundle','personal':False,'cpu_profile':'unchanged',
+    manifest={'schema':1,'kind':'percept-bundle','personal':False,'cpu_profile':cfg['os']['cpu_profile'],
         'profile':'debian-trixie','features':{'gpu':True,'vpu':True,'usb_c_host':False,
         'camera':False,'upper_ram':True,'thermal':True},'rootfs_packages':[p+'=1.0' for p in packages.VPU_RUNTIME],
         'source_commit':'0'*40,'kernel_release':'6.12.113+deb13-arm64',
@@ -171,7 +171,7 @@ class Portable(unittest.TestCase):
             (root/'release/policy.json').write_text(json.dumps({'base_url':'https://example.invalid/releases',
                 'public_keys':{}}))
             digest='a'*64
-            message=json.dumps({'schema':1,'version':'v-unit','bundles':{'unchanged':{
+            message=json.dumps({'schema':1,'version':'v-unit','bundles':{'oc1500':{
                 'file':'unit.bundle.tar.gz','sha256':digest,'bytes':123}}}).encode()
             cfg=validate.validate(helpers.minimal_cfg()).config
             with patch('percept.prepare.small_download',side_effect=[message]) as small, \

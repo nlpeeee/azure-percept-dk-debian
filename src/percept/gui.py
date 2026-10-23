@@ -34,7 +34,7 @@ def main(repo, smoke=False):
         ttk.Button(row,text='Browse',command=lambda: variable.set(filedialog.askopenfilename() or variable.get())).pack(side='left',padx=(5,0))
     row=ttk.Frame(frame);row.pack(fill='x',pady=4)
     ttk.Radiobutton(row,text='Use my own build',variable=source,value='local').pack(side='left')
-    ttk.Radiobutton(row,text='Download a signed release',variable=source,value='release').pack(side='left',padx=16)
+    ttk.Radiobutton(row,text='Download a release',variable=source,value='release').pack(side='left',padx=16)
     file_row('Local bundle',bundle,True)
     row=ttk.Frame(frame);row.pack(fill='x',pady=4)
     ttk.Label(row,text='Release version',width=22).pack(side='left')

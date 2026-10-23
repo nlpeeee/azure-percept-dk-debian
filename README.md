@@ -56,7 +56,7 @@ The new [two-path installer](docs/portable-installer.md) supports generic bundle
 build your own with `--target bundle`, then prepare locally without WSL using
 `percept prepare`, or use the desktop wizard with `percept gui`. Windows/Linux
 application packaging is available; generic first-boot hardware qualification
-and public release signing-key setup remain pending.
+remains pending. Releases are unsigned and checked by SHA-256.
 
 Start with `python percept setup --board my-percept` for saved-settings review.
 Follow the [guided installation](docs/install.md) through source synchronization,

@@ -66,7 +66,7 @@ def run(args, root, pr=None):
         if getattr(args,'mode','prepare' if getattr(sys,'frozen',False) else 'build') == 'prepare':
             pr.out('\nNext: '+executable+' doctor --mode installer')
             pr.out(executable+' prepare --board '+name+' --bundle PATH.bundle.tar.gz --trust-local')
-            pr.out('Or select a signed release with --release VERSION. WSL is not required for preparation.')
+            pr.out('Or download a release with --release VERSION. WSL is not required for preparation.')
             return 0
         pr.out("\nNext, from the Windows repository:")
         pr.out("  python percept doctor")

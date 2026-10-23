@@ -165,9 +165,27 @@ class Portable(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'trust-local'):
             prepare('.',{},bundle='unused')
 
-    def test_no_release_key_fails_closed(self):
-        with self.assertRaisesRegex(ValueError,'no trusted release'):
-            release_bundle(helpers.ROOT,'v1',{},Reporter(lambda e:None))
+    def test_unsigned_release_is_pinned_by_checksum(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'release').mkdir()
+            (root/'release/policy.json').write_text(json.dumps({'base_url':'https://example.invalid/releases',
+                'public_keys':{}}))
+            digest='a'*64
+            message=json.dumps({'schema':1,'version':'v-unit','bundles':{'unchanged':{
+                'file':'unit.bundle.tar.gz','sha256':digest,'bytes':123}}}).encode()
+            cfg=validate.validate(helpers.minimal_cfg()).config
+            with patch('percept.prepare.small_download',side_effect=[message]) as small, \
+                 patch('percept.prepare.fetch_file',return_value=root/'cached') as fetch:
+                self.assertEqual(release_bundle(root,'v-unit',cfg,Reporter(lambda e:None)),root/'cached')
+                small.assert_called_once_with('https://example.invalid/releases/v-unit/release.json')
+                url,_,sha,*_=fetch.call_args[0]
+                self.assertEqual((url,sha),('https://example.invalid/releases/v-unit/unit.bundle.tar.gz',digest))
+            bad=json.dumps({'schema':1,'version':'other','bundles':{}}).encode()
+            with patch('percept.prepare.small_download',side_effect=[bad]), \
+                 patch('percept.prepare.fetch_file') as fetch:
+                with self.assertRaisesRegex(ValueError,'version/format mismatch'):
+                    release_bundle(root,'v-unit',cfg,Reporter(lambda e:None))
+                fetch.assert_not_called()
 
     def test_fast_doctor_never_calls_wsl_or_downloads(self):
         from percept import doctor

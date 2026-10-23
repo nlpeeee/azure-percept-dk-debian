@@ -60,16 +60,18 @@ def release_bundle(repo, version, cfg, report, cancel=None):
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}', version):
         raise ValueError('invalid release version')
     policy = json.loads((Path(repo)/'release/policy.json').read_text(encoding='utf-8'))
-    if not policy['public_keys']:
-        raise ValueError('no trusted release signing key is configured in this candidate application; use an explicitly trusted local build')
     base = policy['base_url'].rstrip('/')+'/'+version+'/'
     message = small_download(base+'release.json')
-    signature = json.loads(small_download(base+'release.sig'))
-    if not isinstance(signature,dict) or not isinstance(signature.get('key_id'),str) or not isinstance(signature.get('signature'),str):
-        raise ValueError('malformed release signature metadata; select another release')
-    key = policy['public_keys'].get(signature['key_id'])
-    if not key: raise ValueError('release uses an unknown signing key')
-    bundles.verify_signature(message, signature['signature'], key)
+    # Releases are unsigned unless the policy lists signing keys: release.json
+    # comes over HTTPS from the project's releases and the bundle must match
+    # its SHA-256. With keys configured, release.sig must also verify.
+    if policy.get('public_keys'):
+        signature = json.loads(small_download(base+'release.sig'))
+        if not isinstance(signature,dict) or not isinstance(signature.get('key_id'),str) or not isinstance(signature.get('signature'),str):
+            raise ValueError('malformed release signature metadata; select another release')
+        key = policy['public_keys'].get(signature['key_id'])
+        if not key: raise ValueError('release uses an unknown signing key')
+        bundles.verify_signature(message, signature['signature'], key)
     data = json.loads(message)
     if not isinstance(data,dict) or data.get('schema') != 1 or data.get('version') != version:
         raise ValueError('release version/format mismatch')

@@ -12,7 +12,7 @@ applications include Python, required libraries and native uuu; WSL and Git are
 not required for preparation. Windows and Linux x64 are the initial targets.
 macOS remains unqualified.
 
-1. Select a signed release version, or select a local `.bundle.tar.gz` and
+1. Select a release version, or select a local `.bundle.tar.gz` and
    explicitly confirm that you trust its source. Check its kernel, VPU capability,
    CPU variant and qualification status. Use `unchanged` unless you intend to
    select `rated` or explicitly experimental `oc1500`.
@@ -65,11 +65,12 @@ Kernel replacement, extra packages, mirror changes, custom root sizes and
 camera runtime require the source workflow rather than silently modifying a
 downloaded bundle. Portable preparation currently supports fill-to-eMMC root.
 
-An empty trusted-key list in a development candidate deliberately disables release
-downloads. Maintainers add their public key before packaging a publishable app;
-no private key belongs in the source tree. Local builds remain available through
-the explicit trust choice. Application executable signing is separate from
-bundle-manifest signing; these development packages are not OS-signed releases.
+Releases are not signed. The application downloads `release.json` over HTTPS
+from this project's GitHub releases and rejects any bundle whose SHA-256 differs
+from it; whether to trust the project is your decision. If maintainers later add
+Ed25519 public keys to `release/policy.json`, a matching `release.sig` becomes
+mandatory (`dev/sign-release.py`). Local builds remain available through the
+explicit trust choice. These development packages are not OS-signed applications.
 
 ## Build your own
 
